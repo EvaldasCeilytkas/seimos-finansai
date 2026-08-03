@@ -41,6 +41,17 @@ function interest(asset) {
   return Number(asset.amount) * Number(asset.interestRate || 0) / 100 * days / 365;
 }
 
+function categoryEmoji(category) {
+  const icons = {
+    "Alkoholis": "🍷", "Atostogos": "✈️", "Auto/Transportas": "🚗", "Buitis": "🏠",
+    "Drabužiai": "👕", "Dovanos": "🎁", "Gyvūnai": "🐾", "Grožis": "✨",
+    "Higiena": "🧴", "Maistas": "🍽️", "Medicina": "💊", "Mokesčiai": "🧾",
+    "Pramogos": "🎬", "Vaikas": "🧸", "Evaldo asmeninės": "👤", "Rimos asmeninės": "👤",
+    "Atlyginimas": "💼", "Kita": "•"
+  };
+  return icons[category] || "•";
+}
+
 function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
   const [activePage, setActivePage] = useState("overview");
   const [transactions, setTransactions] = useState(() => initialData?.transactions ?? loadStorage(TRANSACTIONS_KEY, demoTransactions));
@@ -418,7 +429,7 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
           <button className={`nav-item ${activePage === "analytics" ? "active" : ""}`} onClick={() => setActivePage("analytics")}>Analitika</button>
         </nav>
         <div className="sidebar-footer cloud-footer">
-          <span>V1.8.2 · Analytics 1.2</span>
+          <span>V2.0 · UI Polish</span>
           <span className={`cloud-status ${cloudStatus}`}>{cloudStatus === "saving" ? "Saugoma…" : cloudStatus === "error" ? "Saugojimo klaida" : "Duomenys išsaugoti"}</span>
           <small>{userEmail}</small>
           <button onClick={onSignOut}>Atsijungti</button>
@@ -589,17 +600,30 @@ function Overview({ totals, periodMode, year, month, trendData, categoryData, ro
   const title = periodMode === "year" ? `${year} metų apžvalga` : `${year} m. ${MONTHS[month].toLowerCase()}`;
   return (
     <>
-      <header className="topbar">
+      <header className="topbar overview-topbar">
         <div><p className="eyebrow">{title}</p><h1>Šeimos finansų apžvalga</h1><p className="subtitle">Pajamos, išlaidos, biudžetai ir turtas vienoje vietoje.</p></div>
         <button className="primary-button" onClick={onNew}><Plus size={18}/>Nauja operacija</button>
       </header>
 
+      <section className="overview-hero">
+        <div className="overview-hero-copy">
+          <span className="hero-label">Laikotarpio rezultatas</span>
+          <strong className={totals.savings >= 0 ? "positive" : "negative"}>{money(totals.savings)}</strong>
+          <p>{totals.income ? `Sutaupyta ${totals.savingsRate.toFixed(1)} % gautų pajamų.` : "Įveskite pirmąsias pajamas ir išlaidas."}</p>
+        </div>
+        <div className="overview-hero-stats">
+          <div><span>Pajamos</span><b>{money(totals.income)}</b></div>
+          <div><span>Išlaidos</span><b>{money(totals.expenses)}</b></div>
+          <div><span>Finansinės paskyros</span><b>{money(accountSummary.total)}</b></div>
+        </div>
+      </section>
+
       <section className="metrics-grid five">
-        <Metric label="Pajamos" value={money(totals.income)} helper="Pasirinktas laikotarpis" icon={<ArrowUpRight/>}/>
-        <Metric label="Išlaidos" value={money(totals.expenses)} helper="Pasirinktas laikotarpis" icon={<ArrowDownRight/>} onClick={onTransactions}/>
-        <Metric label="Sutaupyta" value={money(totals.savings)} helper={`${totals.savingsRate.toFixed(1)} % pajamų`} icon={<PiggyBank/>}/>
-        <Metric label="Biudžetas" value={budgetSummary.limit ? `${budgetSummary.percentage.toFixed(0)} %` : "Nenustatyta"} helper={budgetSummary.limit ? `${money(budgetSummary.spent)} iš ${money(budgetSummary.limit)}` : "Nustatykite limitus"} icon={<Gauge/>} onClick={onBudgets}/>
-        <Metric label="Finansinės paskyros" value={money(accountSummary.total)} helper={`${accountSummary.count} aktyvios paskyros`} icon={<WalletCards/>} onClick={onAccounts}/>
+        <Metric tone="income" label="Pajamos" value={money(totals.income)} helper="Pasirinktas laikotarpis" icon={<ArrowUpRight/>}/>
+        <Metric tone="expense" label="Išlaidos" value={money(totals.expenses)} helper="Pasirinktas laikotarpis" icon={<ArrowDownRight/>} onClick={onTransactions}/>
+        <Metric tone="saving" label="Sutaupyta" value={money(totals.savings)} helper={`${totals.savingsRate.toFixed(1)} % pajamų`} icon={<PiggyBank/>}/>
+        <Metric tone="budget" label="Biudžetas" value={budgetSummary.limit ? `${budgetSummary.percentage.toFixed(0)} %` : "Nenustatyta"} helper={budgetSummary.limit ? `${money(budgetSummary.spent)} iš ${money(budgetSummary.limit)}` : "Nustatykite limitus"} icon={<Gauge/>} onClick={onBudgets}/>
+        <Metric tone="account" label="Finansinės paskyros" value={money(accountSummary.total)} helper={`${accountSummary.count} aktyvios paskyros`} icon={<WalletCards/>} onClick={onAccounts}/>
       </section>
 
       {periodMode === "month" && budgetSummary.limit > 0 && (
@@ -838,12 +862,12 @@ function AnalyticsCenter({ transactions, periodMode, year, month, periodRows, to
       </section>
 
       <section className="analytics-kpi-grid">
-        <Metric label="Pajamos" value={money(totals.income)} helper={<ChangeLabel value={incomeChange}/>} icon={<ArrowUpRight/>}/>
-        <Metric label="Išlaidos" value={money(totals.expenses)} helper={<ChangeLabel value={expenseChange} inverse/>} icon={<ArrowDownRight/>}/>
-        <Metric label="Sutaupyta" value={money(totals.savings)} helper={<ChangeLabel value={savingsChange}/>} icon={<PiggyBank/>}/>
-        <Metric label="Taupymo rodiklis" value={`${totals.savingsRate.toFixed(1)} %`} helper="Pajamų dalis po išlaidų" icon={<Gauge/>}/>
-        <Metric label="Vidutinė dienos išlaida" value={money(averageDailyExpense)} helper={`${daysCovered} laikotarpio dienos`} icon={<CalendarDays/>}/>
-        <Metric label="Vidutinė operacija" value={money(averageExpense)} helper={`${expenseRows.length} išlaidų operacijos`} icon={<WalletCards/>}/>
+        <Metric tone="income" label="Pajamos" value={money(totals.income)} helper={<ChangeLabel value={incomeChange}/>} icon={<ArrowUpRight/>}/>
+        <Metric tone="expense" label="Išlaidos" value={money(totals.expenses)} helper={<ChangeLabel value={expenseChange} inverse/>} icon={<ArrowDownRight/>}/>
+        <Metric tone="saving" label="Sutaupyta" value={money(totals.savings)} helper={<ChangeLabel value={savingsChange}/>} icon={<PiggyBank/>}/>
+        <Metric tone="budget" label="Taupymo rodiklis" value={`${totals.savingsRate.toFixed(1)} %`} helper="Pajamų dalis po išlaidų" icon={<Gauge/>}/>
+        <Metric tone="account" label="Vidutinė dienos išlaida" value={money(averageDailyExpense)} helper={`${daysCovered} laikotarpio dienos`} icon={<CalendarDays/>}/>
+        <Metric tone="default" label="Vidutinė operacija" value={money(averageExpense)} helper={`${expenseRows.length} išlaidų operacijos`} icon={<WalletCards/>}/>
       </section>
 
       <section className="analytics-grid-main">
@@ -1329,13 +1353,13 @@ function ChartCard({ title, children }) {
   return <article className="card chart-card"><div className="card-header"><div><p className="card-kicker">Analitika</p><h2>{title}</h2></div></div><div className="chart-wrap">{children}</div></article>;
 }
 
-function Metric({ label, value, helper, icon, onClick }) {
-  return <article className={`metric-card ${onClick ? "clickable" : ""}`} onClick={onClick}><div className="metric-icon">{icon}</div><div><span>{label}</span><strong>{value}</strong><small>{helper}</small></div></article>;
+function Metric({ label, value, helper, icon, onClick, tone = "default" }) {
+  return <article className={`metric-card tone-${tone} ${onClick ? "clickable" : ""}`} onClick={onClick}><div className="metric-icon">{icon}</div><div><span>{label}</span><strong>{value}</strong><small>{helper}</small></div></article>;
 }
 
 function TransactionRow({ item }) {
   const isTransfer = item.type === "transfer";
-  const icon = item.type === "income" ? <ArrowUpRight size={18}/> : item.type === "expense" ? <ArrowDownRight size={18}/> : <ArrowRightLeft size={18}/>;
+  const icon = item.type === "income" ? <ArrowUpRight size={18}/> : item.type === "expense" ? <span className="category-emoji">{categoryEmoji(item.category)}</span> : <ArrowRightLeft size={18}/>;
   const details = isTransfer ? `${item.fromAccount} → ${item.toAccount}` : `${item.category} · ${item.person} · ${item.account}`;
   const prefix = item.type === "income" ? "+" : item.type === "expense" ? "-" : "";
   return <div className="transaction-row"><div className={`transaction-icon ${item.type}`}>{icon}</div><div className="transaction-main"><strong>{item.description}</strong><span>{details}</span></div><div className="transaction-date">{dateLt(item.date)}</div><strong className={`transaction-amount ${item.type}`}>{prefix}{money(item.amount)}</strong></div>;
