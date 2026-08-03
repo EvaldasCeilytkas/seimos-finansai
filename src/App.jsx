@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowDownRight, ArrowLeft, ArrowRight, ArrowRightLeft, ArrowUpRight,
   CalendarDays, CheckCircle2, Copy, Download, Gauge, Pencil, PiggyBank,
-  Plus, Search, Trash2, WalletCards, X
+  Plus, Search, Trash2, WalletCards, X, MessageSquareText
 } from "lucide-react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart,
@@ -418,7 +418,7 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
           <button className="nav-item">Analitika</button>
         </nav>
         <div className="sidebar-footer cloud-footer">
-          <span>V1.6 · Supabase</span>
+          <span>V1.7.2 · Supabase</span>
           <span className={`cloud-status ${cloudStatus}`}>{cloudStatus === "saving" ? "Saugoma…" : cloudStatus === "error" ? "Saugojimo klaida" : "Duomenys išsaugoti"}</span>
           <small>{userEmail}</small>
           <button onClick={onSignOut}>Atsijungti</button>
@@ -750,9 +750,14 @@ function TransactionsCenter({ transactions, financialAccounts, onNew, onEdit, on
   const [person, setPerson] = useState("all");
   const [account, setAccount] = useState("all");
   const [category, setCategory] = useState("all");
+  const [expandedNoteId, setExpandedNoteId] = useState(null);
+
+  function getOperationNote(item) {
+    return String(item.notes || item.note || item.details || item.longDescription || "").trim();
+  }
 
   const filtered = useMemo(() => transactions.filter((item) => {
-    const haystack = `${item.description} ${item.category || ""} ${item.person || ""} ${item.account || ""} ${item.fromAccount || ""} ${item.toAccount || ""}`.toLowerCase();
+    const haystack = `${item.description} ${item.notes || ""} ${item.category || ""} ${item.person || ""} ${item.account || ""} ${item.fromAccount || ""} ${item.toAccount || ""}`.toLowerCase();
     return (!query || haystack.includes(query.toLowerCase())) &&
       (!from || item.date >= from) && (!to || item.date <= to) &&
       (type === "all" || item.type === type) &&
@@ -769,8 +774,8 @@ function TransactionsCenter({ transactions, financialAccounts, onNew, onEdit, on
   }, [filtered]);
 
   function exportCsv() {
-    const header = ["Data","Tipas","Aprašymas","Kategorija","Asmuo","Sąskaita","Iš","Į","Suma"];
-    const rows = filtered.map((i) => [i.date, i.type, i.description, i.category || "", i.person || "", i.account || "", i.fromAccount || "", i.toAccount || "", i.amount]);
+    const header = ["Data","Tipas","Aprašymas","Pastabos","Kategorija","Asmuo","Sąskaita","Iš","Į","Suma"];
+    const rows = filtered.map((i) => [i.date, i.type, i.description, i.notes || "", i.category || "", i.person || "", i.account || "", i.fromAccount || "", i.toAccount || "", i.amount]);
     const csv = [header, ...rows].map((row) => row.map((v) => `"${String(v).replaceAll('"','""')}"`).join(";")).join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -782,7 +787,7 @@ function TransactionsCenter({ transactions, financialAccounts, onNew, onEdit, on
   return (
     <>
       <header className="topbar">
-        <div><p className="eyebrow">V1.4</p><h1>Operacijų centras</h1><p className="subtitle">Paieška, filtrai ir operacijų valdymas.</p></div>
+        <div><p className="eyebrow">V1.7.2</p><h1>Operacijų centras</h1><p className="subtitle">Paieška, filtrai ir operacijų valdymas.</p></div>
         <button className="primary-button" onClick={onNew}><Plus size={18}/>Nauja operacija</button>
       </header>
       <section className="metrics-grid four">
@@ -807,14 +812,52 @@ function TransactionsCenter({ transactions, financialAccounts, onNew, onEdit, on
         <div className="table-scroll">
           <table className="operations-table">
             <thead><tr><th>Data</th><th>Aprašymas</th><th>Kategorija / kryptis</th><th>Asmuo</th><th>Sąskaita</th><th>Suma</th><th>Veiksmai</th></tr></thead>
-            <tbody>{filtered.map(item => (
-              <tr key={item.id}>
-                <td>{dateLt(item.date)}</td><td><strong>{item.description}</strong><span>{item.type === "income" ? "Pajamos" : item.type === "expense" ? "Išlaidos" : "Perkėlimas"}</span></td>
-                <td>{item.type === "transfer" ? `${item.fromAccount} → ${item.toAccount}` : item.category}</td><td>{item.person || "—"}</td><td>{item.type === "transfer" ? "—" : item.account}</td>
-                <td className={`amount-cell ${item.type}`}>{item.type === "income" ? "+" : item.type === "expense" ? "-" : ""}{money(item.amount)}</td>
-                <td><div className="row-actions"><button title="Redaguoti" onClick={()=>onEdit(item)}><Pencil size={16}/></button><button title="Dubliuoti" onClick={()=>onDuplicate(item)}><Copy size={16}/></button><button title="Ištrinti" className="danger" onClick={()=>onDelete(item)}><Trash2 size={16}/></button></div></td>
-              </tr>
-            ))}</tbody>
+            <tbody>{filtered.map(item => {
+              const operationNote = getOperationNote(item);
+              const noteOpen = expandedNoteId === item.id;
+              return (
+                <Fragment key={item.id}>
+                  <tr>
+                    <td>{dateLt(item.date)}</td>
+                    <td>
+                      <div className="operation-description">
+                        <strong>{item.description}</strong>
+                        {operationNote && (
+                          <button
+                            type="button"
+                            className={`note-indicator ${noteOpen ? "active" : ""}`}
+                            title={operationNote}
+                            aria-expanded={noteOpen}
+                            aria-controls={`operation-note-${item.id}`}
+                            onClick={() => setExpandedNoteId(noteOpen ? null : item.id)}
+                          >
+                            <MessageSquareText size={15}/>
+                            <span>Pastaba</span>
+                          </button>
+                        )}
+                      </div>
+                      <span>{item.type === "income" ? "Pajamos" : item.type === "expense" ? "Išlaidos" : "Perkėlimas"}</span>
+                    </td>
+                    <td>{item.type === "transfer" ? `${item.fromAccount} → ${item.toAccount}` : item.category}</td>
+                    <td>{item.person || "—"}</td>
+                    <td>{item.type === "transfer" ? "—" : item.account}</td>
+                    <td className={`amount-cell ${item.type}`}>{item.type === "income" ? "+" : item.type === "expense" ? "-" : ""}{money(item.amount)}</td>
+                    <td><div className="row-actions"><button title="Redaguoti" onClick={()=>onEdit(item)}><Pencil size={16}/></button><button title="Dubliuoti" onClick={()=>onDuplicate(item)}><Copy size={16}/></button><button title="Ištrinti" className="danger" onClick={()=>onDelete(item)}><Trash2 size={16}/></button></div></td>
+                  </tr>
+                  {operationNote && noteOpen && (
+                    <tr className="operation-note-row" id={`operation-note-${item.id}`}>
+                      <td></td>
+                      <td colSpan="6">
+                        <div className="operation-note-panel">
+                          <MessageSquareText size={17}/>
+                          <div><strong>Papildoma informacija</strong><p>{operationNote}</p></div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}</tbody>
           </table>
           {filtered.length === 0 && <div className="empty-state">Pagal pasirinktus filtrus operacijų nerasta.</div>}
         </div>
@@ -981,6 +1024,7 @@ function TransactionModal({ initial, initialDate, assets, financialAccounts, onC
     fromAccountId: activeAccounts[0]?.id || "",
     toAccountId: activeAccounts[1]?.id || activeAccounts[0]?.id || "",
     description: "",
+    notes: "",
     amount: "",
     personalBudget: false,
     personalBudgetOwner: ""
@@ -1019,7 +1063,8 @@ function TransactionModal({ initial, initialDate, assets, financialAccounts, onC
       <button type="button" className={form.type==="transfer"?"active":""} onClick={()=>set("type","transfer")}>Perkėlimas</button>
     </div>
     <label>Data<input type="date" min="2026-01-01" value={form.date} onChange={(e)=>set("date",e.target.value)}/></label>
-    <label>Aprašymas<input autoFocus value={form.description} onChange={(e)=>set("description",e.target.value)} placeholder={isTransfer ? "Pvz. Pinigai į Evaldo piniginę" : "Pvz. Lidl, atlyginimas..."}/></label>
+    <label>Trumpas aprašymas<input autoFocus value={form.description} onChange={(e)=>set("description",e.target.value)} placeholder={isTransfer ? "Pvz. Pinigai į Evaldo piniginę" : "Pvz. Lidl, atlyginimas..."}/></label>
+    <label>Platesnis aprašymas<textarea rows="3" value={form.notes || ""} onChange={(e)=>set("notes",e.target.value)} placeholder="Papildoma informacija apie operaciją (nebūtina)"/></label>
     {isTransfer ? <>
       <div className="form-grid">
         <label>Iš<select value={form.fromAccountId || ""} onChange={(e)=>set("fromAccountId",e.target.value)}>{activeAccounts.map((account)=><option key={account.id} value={account.id}>{account.name} · {account.owner}</option>)}</select></label>
