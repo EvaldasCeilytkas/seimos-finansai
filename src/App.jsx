@@ -415,10 +415,10 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
           <button className={`nav-item ${activePage === "budgets" ? "active" : ""}`} onClick={() => setActivePage("budgets")}>Biudžetai</button>
           <button className={`nav-item ${activePage === "accounts" ? "active" : ""}`} onClick={() => setActivePage("accounts")}>Paskyros</button>
           <button className={`nav-item ${activePage === "assets" ? "active" : ""}`} onClick={() => setActivePage("assets")}>Turtas</button>
-          <button className="nav-item">Analitika</button>
+          <button className={`nav-item ${activePage === "analytics" ? "active" : ""}`} onClick={() => setActivePage("analytics")}>Analitika</button>
         </nav>
         <div className="sidebar-footer cloud-footer">
-          <span>V1.7.2 · Supabase</span>
+          <span>V1.8.2 · Analytics 1.2</span>
           <span className={`cloud-status ${cloudStatus}`}>{cloudStatus === "saving" ? "Saugoma…" : cloudStatus === "error" ? "Saugojimo klaida" : "Duomenys išsaugoti"}</span>
           <small>{userEmail}</small>
           <button onClick={onSignOut}>Atsijungti</button>
@@ -504,6 +504,19 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
             onEdit={editAsset}
             onDuplicate={duplicateAsset}
             onDelete={deleteAsset}
+          />
+        )}
+
+        {activePage === "analytics" && (
+          <AnalyticsCenter
+            transactions={transactions}
+            periodMode={periodMode}
+            year={selectedYear}
+            month={selectedMonth}
+            periodRows={periodTransactions}
+            totals={totals}
+            yearlyData={yearlyData}
+            categoryData={categoryData}
           />
         )}
       </main>
@@ -676,6 +689,322 @@ function Overview({ totals, periodMode, year, month, trendData, categoryData, ro
   );
 }
 
+
+function AnalyticsCenter({ transactions, periodMode, year, month, periodRows, totals, yearlyData, categoryData }) {
+  const [expandedCategory, setExpandedCategory] = useState(null);
+  const [categorySort, setCategorySort] = useState("amount");
+  const expenseRows = useMemo(() => periodRows.filter((item) => item.type === "expense"), [periodRows]);
+  const incomeRows = useMemo(() => periodRows.filter((item) => item.type === "income"), [periodRows]);
+
+  const previousRows = useMemo(() => {
+    if (periodMode === "year") {
+      return transactions.filter((item) => item.date.startsWith(String(year - 1)));
+    }
+    const previousDate = new Date(year, month - 1, 1);
+    const key = `${previousDate.getFullYear()}-${String(previousDate.getMonth() + 1).padStart(2, "0")}`;
+    return transactions.filter((item) => ym(item.date) === key);
+  }, [transactions, periodMode, year, month]);
+
+  const previousTotals = useMemo(() => {
+    const income = previousRows.filter((item) => item.type === "income").reduce((sum, item) => sum + Number(item.amount), 0);
+    const expenses = previousRows.filter((item) => item.type === "expense").reduce((sum, item) => sum + Number(item.amount), 0);
+    return { income, expenses, savings: income - expenses };
+  }, [previousRows]);
+
+  const change = (current, previous) => {
+    if (!previous) return current ? null : 0;
+    return (current - previous) / Math.abs(previous) * 100;
+  };
+
+  const incomeChange = change(totals.income, previousTotals.income);
+  const expenseChange = change(totals.expenses, previousTotals.expenses);
+  const savingsChange = change(totals.savings, previousTotals.savings);
+  const averageExpense = expenseRows.length ? totals.expenses / expenseRows.length : 0;
+
+  const daysCovered = useMemo(() => {
+    if (periodMode === "year") return new Date(year, 1, 29).getMonth() === 1 ? 366 : 365;
+    const today = new Date();
+    const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+    return isCurrentMonth ? Math.max(1, today.getDate()) : new Date(year, month + 1, 0).getDate();
+  }, [periodMode, year, month]);
+  const averageDailyExpense = totals.expenses / daysCovered;
+
+  const topCategories = useMemo(() => categoryData.slice(0, 8).map((item) => ({
+    ...item,
+    share: totals.expenses ? item.value / totals.expenses * 100 : 0
+  })), [categoryData, totals.expenses]);
+
+  const previousCategoryTotals = useMemo(() => {
+    const grouped = {};
+    previousRows.filter((item) => item.type === "expense").forEach((item) => {
+      const category = item.category || "Nenurodyta";
+      grouped[category] = (grouped[category] || 0) + Number(item.amount);
+    });
+    return grouped;
+  }, [previousRows]);
+
+  const monthlyCategoryRows = useMemo(() => {
+    const grouped = {};
+    expenseRows.forEach((item) => {
+      const category = item.category || "Nenurodyta";
+      if (!grouped[category]) grouped[category] = [];
+      grouped[category].push(item);
+    });
+
+    const knownCategories = [...EXPENSE_CATEGORIES];
+    Object.keys(grouped).forEach((category) => {
+      if (!knownCategories.includes(category)) knownCategories.push(category);
+    });
+
+    const rows = knownCategories.map((category) => {
+      const operations = (grouped[category] || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+      const value = operations.reduce((sum, item) => sum + Number(item.amount), 0);
+      const previousValue = previousCategoryTotals[category] || 0;
+      const difference = value - previousValue;
+      return {
+        name: category,
+        value,
+        previousValue,
+        difference,
+        change: previousValue ? difference / previousValue * 100 : value ? null : 0,
+        share: totals.expenses ? value / totals.expenses * 100 : 0,
+        operations
+      };
+    });
+
+    return rows.sort((a, b) => categorySort === "name"
+      ? a.name.localeCompare(b.name, "lt")
+      : b.value - a.value || a.name.localeCompare(b.name, "lt"));
+  }, [expenseRows, totals.expenses, categorySort, previousCategoryTotals]);
+
+  const largestExpenses = useMemo(() => expenseRows
+    .slice()
+    .sort((a, b) => Number(b.amount) - Number(a.amount))
+    .slice(0, 10), [expenseRows]);
+
+  const personComparison = useMemo(() => {
+    const names = [...people];
+    periodRows.forEach((item) => {
+      if (item.person && !names.includes(item.person)) names.push(item.person);
+    });
+    return names.map((name) => {
+      const rows = periodRows.filter((item) => item.person === name);
+      const income = rows.filter((item) => item.type === "income").reduce((sum, item) => sum + Number(item.amount), 0);
+      const expenses = rows.filter((item) => item.type === "expense").reduce((sum, item) => sum + Number(item.amount), 0);
+      const grouped = {};
+      rows.filter((item) => item.type === "expense").forEach((item) => {
+        const category = item.category || "Nenurodyta";
+        grouped[category] = (grouped[category] || 0) + Number(item.amount);
+      });
+      const topCategory = Object.entries(grouped).sort((a, b) => b[1] - a[1])[0];
+      return { name, income, expenses, savings: income - expenses, topCategory: topCategory?.[0] || "—" };
+    });
+  }, [periodRows]);
+
+  const personData = useMemo(() => personComparison.map((item) => ({ name: item.name, value: item.expenses })), [personComparison]);
+  const categoriesWithActivity = monthlyCategoryRows.filter((item) => item.value || item.previousValue);
+  const biggestIncrease = categoriesWithActivity.slice().sort((a, b) => b.difference - a.difference)[0];
+  const biggestDecrease = categoriesWithActivity.slice().sort((a, b) => a.difference - b.difference)[0];
+  const title = periodMode === "year" ? `${year} metų analizė` : `${year} m. ${MONTHS[month].toLowerCase()} analizė`;
+  const comparisonLabel = periodMode === "year" ? "palyginti su ankstesniais metais" : "palyginti su ankstesniu mėnesiu";
+  const leadingCategory = categoryData[0];
+
+  const summaryText = useMemo(() => {
+    const periodName = periodMode === "year" ? `${year} metais` : `${year} m. ${MONTHS[month].toLowerCase()}`;
+    const comparison = expenseChange === null
+      ? "Ankstesnio laikotarpio palyginimui duomenų nepakanka."
+      : `Išlaidos buvo ${Math.abs(expenseChange).toFixed(1)} % ${expenseChange > 0 ? "didesnės" : expenseChange < 0 ? "mažesnės" : "tokios pačios"} nei ankstesniu laikotarpiu.`;
+    const categorySentence = leadingCategory
+      ? `Daugiausia išleista kategorijai „${leadingCategory.name}“ – ${money(leadingCategory.value)}.`
+      : "Išlaidų operacijų šiame laikotarpyje nėra.";
+    return `${periodName} gauta ${money(totals.income)}, išleista ${money(totals.expenses)}, o laikotarpio rezultatas – ${money(totals.savings)}. ${categorySentence} ${comparison}`;
+  }, [periodMode, year, month, totals, leadingCategory, expenseChange]);
+
+  const ChangeLabel = ({ value, inverse = false }) => {
+    if (value === null) return <small>Nėra ankstesnio laikotarpio duomenų</small>;
+    const positive = inverse ? value <= 0 : value >= 0;
+    return <small className={positive ? "analytics-change good" : "analytics-change bad"}>{value >= 0 ? "+" : ""}{value.toFixed(1)} % · {comparisonLabel}</small>;
+  };
+
+  return (
+    <>
+      <header className="topbar analytics-header">
+        <div><p className="eyebrow">{title}</p><h1>Finansų analitika</h1><p className="subtitle">Išlaidų struktūra, tendencijos ir svarbiausi pasirinkto laikotarpio rodikliai.</p></div>
+      </header>
+
+      <section className="card analytics-insight-banner">
+        <div><p className="card-kicker">Automatinė laikotarpio santrauka</p><h2>{periodMode === "year" ? `${year} metų rezultatas` : `${MONTHS[month]} ${year}`}</h2></div>
+        <p>{summaryText}</p>
+      </section>
+
+      <section className="analytics-kpi-grid">
+        <Metric label="Pajamos" value={money(totals.income)} helper={<ChangeLabel value={incomeChange}/>} icon={<ArrowUpRight/>}/>
+        <Metric label="Išlaidos" value={money(totals.expenses)} helper={<ChangeLabel value={expenseChange} inverse/>} icon={<ArrowDownRight/>}/>
+        <Metric label="Sutaupyta" value={money(totals.savings)} helper={<ChangeLabel value={savingsChange}/>} icon={<PiggyBank/>}/>
+        <Metric label="Taupymo rodiklis" value={`${totals.savingsRate.toFixed(1)} %`} helper="Pajamų dalis po išlaidų" icon={<Gauge/>}/>
+        <Metric label="Vidutinė dienos išlaida" value={money(averageDailyExpense)} helper={`${daysCovered} laikotarpio dienos`} icon={<CalendarDays/>}/>
+        <Metric label="Vidutinė operacija" value={money(averageExpense)} helper={`${expenseRows.length} išlaidų operacijos`} icon={<WalletCards/>}/>
+      </section>
+
+      <section className="analytics-grid-main">
+        <article className="card analytics-trend-card">
+          <div className="card-header"><div><p className="card-kicker">12 mėnesių dinamika</p><h2>Pajamos, išlaidos ir santaupos</h2></div></div>
+          <div className="chart-wrap analytics-chart-large">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={yearlyData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false}/>
+                <XAxis dataKey="month"/><YAxis/><Tooltip formatter={money}/>
+                <Bar dataKey="income" name="Pajamos" fill="#10b981" radius={[6,6,0,0]}/>
+                <Bar dataKey="expenses" name="Išlaidos" fill="#f97316" radius={[6,6,0,0]}/>
+                <Bar dataKey="savings" name="Santaupos" fill="#2563eb" radius={[6,6,0,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </article>
+
+        <article className="card analytics-pie-card">
+          <div className="card-header"><div><p className="card-kicker">Išlaidų struktūra</p><h2>Pagal kategorijas</h2></div></div>
+          {categoryData.length ? (
+            <>
+              <div className="analytics-pie-wrap">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={categoryData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={94} paddingAngle={2}>
+                      {categoryData.map((item, index) => <Cell key={item.name} fill={`hsl(${205 + index * 31} 68% 52%)`}/>)}
+                    </Pie>
+                    <Tooltip formatter={money}/>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="analytics-pie-center"><strong>{money(totals.expenses)}</strong><span>Iš viso</span></div>
+              </div>
+              <div className="analytics-mini-legend">
+                {topCategories.slice(0, 5).map((item) => <div key={item.name}><span>{item.name}</span><strong>{item.share.toFixed(1)} %</strong></div>)}
+              </div>
+            </>
+          ) : <div className="empty-state">Pasirinktam laikotarpiui išlaidų nėra.</div>}
+        </article>
+      </section>
+
+      <section className="card analytics-comparison-card">
+        <div className="card-header">
+          <div><p className="card-kicker">Laikotarpių palyginimas</p><h2>Kategorijų pokyčiai</h2></div>
+          <div className="analytics-comparison-highlights">
+            {biggestIncrease?.difference > 0 && <span className="bad">Daugiausia augo: {biggestIncrease.name} {money(biggestIncrease.difference)}</span>}
+            {biggestDecrease?.difference < 0 && <span className="good">Daugiausia mažėjo: {biggestDecrease.name} {money(Math.abs(biggestDecrease.difference))}</span>}
+          </div>
+        </div>
+        <div className="analytics-comparison-table-wrap">
+          <table className="analytics-comparison-table">
+            <thead><tr><th>Kategorija</th><th>Ankstesnis laikotarpis</th><th>Pasirinktas laikotarpis</th><th>Skirtumas</th><th>Pokytis</th></tr></thead>
+            <tbody>
+              {categoriesWithActivity.map((item) => (
+                <tr key={item.name}>
+                  <td><strong>{item.name}</strong></td>
+                  <td>{money(item.previousValue)}</td>
+                  <td>{money(item.value)}</td>
+                  <td className={item.difference > 0 ? "trend-bad" : item.difference < 0 ? "trend-good" : ""}>{item.difference > 0 ? "+" : ""}{money(item.difference)}</td>
+                  <td>{item.change === null ? "Nauja" : `${item.change > 0 ? "+" : ""}${item.change.toFixed(1)} %`}</td>
+                </tr>
+              ))}
+              {!categoriesWithActivity.length && <tr><td colSpan="5"><div className="empty-state">Palyginimui duomenų nėra.</div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="card analytics-category-summary-card">
+        <div className="card-header analytics-category-summary-header">
+          <div>
+            <p className="card-kicker">{periodMode === "year" ? `${year} metų kategorijos` : `${MONTHS[month]} ${year}`}</p>
+            <h2>Visų išlaidų kategorijų suvestinė</h2>
+          </div>
+          <label className="analytics-sort-label">
+            Rikiuoti
+            <select value={categorySort} onChange={(event) => setCategorySort(event.target.value)}>
+              <option value="amount">Pagal sumą</option>
+              <option value="name">Pagal pavadinimą</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="analytics-category-table-wrap">
+          <table className="analytics-category-table">
+            <thead><tr><th>Kategorija</th><th>Operacijos</th><th>Suma</th><th>% nuo išlaidų</th></tr></thead>
+            <tbody>
+              {monthlyCategoryRows.map((item) => {
+                const isOpen = expandedCategory === item.name;
+                return (
+                  <Fragment key={item.name}>
+                    <tr className={item.operations.length ? "clickable" : "muted"} onClick={() => item.operations.length && setExpandedCategory(isOpen ? null : item.name)}>
+                      <td><div className="analytics-category-name"><ArrowRight size={16} className={isOpen ? "open" : ""}/><strong>{item.name}</strong></div></td>
+                      <td>{item.operations.length}</td>
+                      <td className="money-cell">{money(item.value)}</td>
+                      <td><div className="analytics-share-cell"><span>{item.share.toFixed(1)} %</span><div><i style={{ width: `${Math.max(0, item.share)}%` }}/></div></div></td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="analytics-category-details-row"><td colSpan="4"><div className="analytics-category-operations">
+                        {item.operations.map((operation) => <div key={operation.id}><span>{dateLt(operation.date)}</span><strong>{operation.description || "Be aprašymo"}</strong><small>{operation.person || "Nenurodyta"}</small><b>{money(operation.amount)}</b></div>)}
+                      </div></td></tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+            <tfoot><tr><td><strong>Iš viso</strong></td><td>{expenseRows.length}</td><td className="money-cell"><strong>{money(totals.expenses)}</strong></td><td><strong>{totals.expenses ? "100,0 %" : "0,0 %"}</strong></td></tr></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section className="analytics-grid-secondary">
+        <article className="card">
+          <div className="card-header"><div><p className="card-kicker">TOP kategorijos</p><h2>Kur išleidžiama daugiausia</h2></div></div>
+          <div className="analytics-category-list">
+            {topCategories.map((item, index) => <div className="analytics-category-row" key={item.name}><div className="analytics-rank">{index + 1}</div><div className="analytics-category-content"><div><strong>{item.name}</strong><span>{money(item.value)} · {item.share.toFixed(1)} %</span></div><div className="analytics-bar"><span style={{ width: `${Math.max(3, item.share)}%` }}/></div></div></div>)}
+            {!topCategories.length && <div className="empty-state">Nėra duomenų.</div>}
+          </div>
+        </article>
+
+        <article className="card">
+          <div className="card-header"><div><p className="card-kicker">Didžiausios išlaidos</p><h2>TOP 10 operacijų</h2></div></div>
+          <div className="analytics-largest-list">
+            {largestExpenses.map((item, index) => <div className="analytics-largest-row" key={item.id}><span className="analytics-rank">{index + 1}</span><div><strong>{item.description}</strong><span>{item.category} · {item.person || "Nenurodyta"} · {dateLt(item.date)}</span></div><b>{money(item.amount)}</b></div>)}
+            {!largestExpenses.length && <div className="empty-state">Nėra duomenų.</div>}
+          </div>
+        </article>
+      </section>
+
+      <section className="card analytics-person-comparison-card">
+        <div className="card-header"><div><p className="card-kicker">Šeimos palyginimas</p><h2>Evaldas ir Rima</h2></div></div>
+        <div className="analytics-person-cards">
+          {personComparison.map((item) => (
+            <article key={item.name}>
+              <div className="analytics-person-title"><span>{item.name.slice(0, 1)}</span><div><strong>{item.name}</strong><small>Didžiausia kategorija: {item.topCategory}</small></div></div>
+              <div className="analytics-person-stats"><div><span>Pajamos</span><strong>{money(item.income)}</strong></div><div><span>Išlaidos</span><strong>{money(item.expenses)}</strong></div><div><span>Rezultatas</span><strong className={item.savings >= 0 ? "positive-value" : "negative-value"}>{money(item.savings)}</strong></div></div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="analytics-grid-bottom">
+        <article className="card">
+          <div className="card-header"><div><p className="card-kicker">Šeimos pjūvis</p><h2>Išlaidos pagal asmenį</h2></div></div>
+          <div className="chart-wrap analytics-person-chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={personData} layout="vertical" margin={{ left: 18 }}><CartesianGrid strokeDasharray="3 3" horizontal={false}/><XAxis type="number"/><YAxis type="category" dataKey="name" width={90}/><Tooltip formatter={money}/><Bar dataKey="value" name="Išlaidos" fill="#2563eb" radius={[0,7,7,0]}/></BarChart></ResponsiveContainer></div>
+        </article>
+
+        <article className="card analytics-summary-card">
+          <div><p className="card-kicker">Laikotarpio santrauka</p><h2>Operacijų aktyvumas</h2></div>
+          <div className="analytics-summary-values">
+            <div><span>Visos operacijos</span><strong>{periodRows.filter((item) => item.type !== "transfer").length}</strong></div>
+            <div><span>Pajamų operacijos</span><strong>{incomeRows.length}</strong></div>
+            <div><span>Išlaidų operacijos</span><strong>{expenseRows.length}</strong></div>
+            <div><span>Didžiausia išlaida</span><strong>{money(largestExpenses[0]?.amount || 0)}</strong></div>
+          </div>
+        </article>
+      </section>
+    </>
+  );
+}
+
 function BudgetsCenter({ rows, summary, periodKey, onNew, onCopy, onEdit, onDelete }) {
   return (
     <>
@@ -832,7 +1161,6 @@ function TransactionsCenter({ transactions, financialAccounts, onNew, onEdit, on
                             onClick={() => setExpandedNoteId(noteOpen ? null : item.id)}
                           >
                             <MessageSquareText size={15}/>
-                            <span>Pastaba</span>
                           </button>
                         )}
                       </div>
