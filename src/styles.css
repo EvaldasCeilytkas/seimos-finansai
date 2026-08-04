@@ -878,3 +878,43 @@ input,select { transition:border-color .16s ease,box-shadow .16s ease,background
 .operations-load-more span { color:var(--muted); font-size:13px; font-weight:700; }
 .load-more-button { min-width:210px; justify-content:center; }
 @media (max-width:760px) { .load-more-button { width:100%; } }
+
+
+/* Operacijų centras V2.0.1 – kategorija pirmiau, aiškesnė hierarchija */
+.operation-category {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+.operation-category strong {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-weight:750;
+  color:#0f172a;
+}
+.operation-category-icon {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:22px;
+  flex:0 0 22px;
+  font-size:16px;
+  line-height:1;
+}
+.operation-description-text {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-weight:400;
+  color:#334155;
+}
+.operations-table tbody td:nth-child(2) > span {
+  display:block;
+  margin-top:3px;
+  color:#94a3b8;
+  font-size:12px;
+}

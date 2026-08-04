@@ -1167,7 +1167,7 @@ function TransactionsCenter({ transactions, financialAccounts, periodMode, year,
   return (
     <>
       <header className="topbar">
-        <div><p className="eyebrow">Operacijų centras V2.0</p><h1>Operacijų centras</h1><p className="subtitle">Paieška, filtrai ir operacijų valdymas.</p></div>
+        <div><p className="eyebrow">Operacijų centras V2.0.1</p><h1>Operacijų centras</h1><p className="subtitle">Paieška, filtrai ir operacijų valdymas.</p></div>
         <button className="primary-button" onClick={onNew}><Plus size={18}/>Nauja operacija</button>
       </header>
       <section className="metrics-grid four">
@@ -1198,7 +1198,7 @@ function TransactionsCenter({ transactions, financialAccounts, periodMode, year,
         </div>
         <div className="table-scroll">
           <table className="operations-table">
-            <thead><tr><th>Data</th><th>Aprašymas</th><th>Kategorija / kryptis</th><th>Asmuo</th><th>Sąskaita</th><th>Suma</th><th>Veiksmai</th></tr></thead>
+            <thead><tr><th>Data</th><th>Kategorija / kryptis</th><th>Aprašymas</th><th>Asmuo</th><th>Sąskaita</th><th>Suma</th><th>Veiksmai</th></tr></thead>
             <tbody>{visibleTransactions.map(item => {
               const operationNote = getOperationNote(item);
               const noteOpen = expandedNoteId === item.id;
@@ -1207,8 +1207,17 @@ function TransactionsCenter({ transactions, financialAccounts, periodMode, year,
                   <tr>
                     <td>{dateLt(item.date)}</td>
                     <td>
+                      <div className="operation-category">
+                        <span className="operation-category-icon" aria-hidden="true">
+                          {item.type === "transfer" ? "↔️" : categoryEmoji(item.category)}
+                        </span>
+                        <strong>{item.type === "transfer" ? `${item.fromAccount} → ${item.toAccount}` : item.category}</strong>
+                      </div>
+                      <span>{item.type === "income" ? "Pajamos" : item.type === "expense" ? "Išlaidos" : "Perkėlimas"}</span>
+                    </td>
+                    <td>
                       <div className="operation-description">
-                        <strong>{item.description}</strong>
+                        <span className="operation-description-text">{item.description || "—"}</span>
                         {operationNote && (
                           <button
                             type="button"
@@ -1222,9 +1231,7 @@ function TransactionsCenter({ transactions, financialAccounts, periodMode, year,
                           </button>
                         )}
                       </div>
-                      <span>{item.type === "income" ? "Pajamos" : item.type === "expense" ? "Išlaidos" : "Perkėlimas"}</span>
                     </td>
-                    <td>{item.type === "transfer" ? `${item.fromAccount} → ${item.toAccount}` : item.category}</td>
                     <td>{item.person || "—"}</td>
                     <td>{item.type === "transfer" ? "—" : item.account}</td>
                     <td className={`amount-cell ${item.type}`}>{item.type === "income" ? "+" : item.type === "expense" ? "-" : ""}{money(item.amount)}</td>
