@@ -871,3 +871,10 @@ input,select { transition:border-color .16s ease,box-shadow .16s ease,background
   .overview-hero-stats > div { display:flex; align-items:center; justify-content:space-between; gap:12px; }
   .overview-hero-stats b { margin-top:0; }
 }
+
+/* Operacijų centras V2.0 */
+.operations-visible-count { margin:6px 0 0; color:var(--muted); font-size:13px; }
+.operations-load-more { display:flex; justify-content:center; align-items:center; padding:22px 20px 8px; border-top:1px solid var(--line); }
+.operations-load-more span { color:var(--muted); font-size:13px; font-weight:700; }
+.load-more-button { min-width:210px; justify-content:center; }
+@media (max-width:760px) { .load-more-button { width:100%; } }

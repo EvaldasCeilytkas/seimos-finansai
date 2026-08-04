@@ -473,6 +473,9 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
           <TransactionsCenter
             transactions={transactions}
             financialAccounts={financialAccounts}
+            periodMode={periodMode}
+            year={selectedYear}
+            month={selectedMonth}
             onNew={openNewTransaction}
             onEdit={editTransaction}
             onDuplicate={duplicateTransaction}
@@ -1095,15 +1098,35 @@ function ProgressBar({ percentage }) {
   return <div className={`budget-progress ${state}`}><span style={{ width: `${width}%` }}/></div>;
 }
 
-function TransactionsCenter({ transactions, financialAccounts, onNew, onEdit, onDuplicate, onDelete }) {
+function TransactionsCenter({ transactions, financialAccounts, periodMode, year, month, onNew, onEdit, onDuplicate, onDelete }) {
+  const periodDates = useMemo(() => {
+    if (periodMode === "year") {
+      return { from: `${year}-01-01`, to: `${year}-12-31` };
+    }
+    const monthNumber = String(month + 1).padStart(2, "0");
+    const lastDay = String(new Date(year, month + 1, 0).getDate()).padStart(2, "0");
+    return { from: `${year}-${monthNumber}-01`, to: `${year}-${monthNumber}-${lastDay}` };
+  }, [periodMode, year, month]);
+
   const [query, setQuery] = useState("");
-  const [from, setFrom] = useState("2026-01-01");
-  const [to, setTo] = useState("2026-12-31");
+  const [from, setFrom] = useState(periodDates.from);
+  const [to, setTo] = useState(periodDates.to);
   const [type, setType] = useState("all");
   const [person, setPerson] = useState("all");
   const [account, setAccount] = useState("all");
   const [category, setCategory] = useState("all");
   const [expandedNoteId, setExpandedNoteId] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(50);
+
+  useEffect(() => {
+    setFrom(periodDates.from);
+    setTo(periodDates.to);
+  }, [periodDates]);
+
+  useEffect(() => {
+    setVisibleCount(50);
+    setExpandedNoteId(null);
+  }, [query, from, to, type, person, account, category]);
 
   function getOperationNote(item) {
     return String(item.notes || item.note || item.details || item.longDescription || "").trim();
@@ -1118,6 +1141,10 @@ function TransactionsCenter({ transactions, financialAccounts, onNew, onEdit, on
       (account === "all" || item.account === account || item.fromAccount === account || item.toAccount === account) &&
       (category === "all" || item.category === category);
   }).sort((a,b) => b.date.localeCompare(a.date)), [transactions, query, from, to, type, person, account, category]);
+
+  const visibleTransactions = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+  const hasMoreTransactions = visibleCount < filtered.length;
+  const periodLabel = periodMode === "year" ? `${year} metai` : `${MONTHS[month]} ${year}`;
 
   const summary = useMemo(() => {
     const income = filtered.filter((i) => i.type === "income").reduce((s,i) => s + Number(i.amount), 0);
@@ -1140,7 +1167,7 @@ function TransactionsCenter({ transactions, financialAccounts, onNew, onEdit, on
   return (
     <>
       <header className="topbar">
-        <div><p className="eyebrow">V1.7.2</p><h1>Operacijų centras</h1><p className="subtitle">Paieška, filtrai ir operacijų valdymas.</p></div>
+        <div><p className="eyebrow">Operacijų centras V2.0</p><h1>Operacijų centras</h1><p className="subtitle">Paieška, filtrai ir operacijų valdymas.</p></div>
         <button className="primary-button" onClick={onNew}><Plus size={18}/>Nauja operacija</button>
       </header>
       <section className="metrics-grid four">
@@ -1161,11 +1188,18 @@ function TransactionsCenter({ transactions, financialAccounts, onNew, onEdit, on
         </div>
       </section>
       <section className="card operations-table-card">
-        <div className="card-header"><div><p className="card-kicker">Operacijų sąrašas</p><h2>{filtered.length} įrašai</h2></div><button className="secondary-button" onClick={exportCsv}><Download size={17}/>Eksportuoti CSV</button></div>
+        <div className="card-header">
+          <div>
+            <p className="card-kicker">Operacijų sąrašas · {periodLabel}</p>
+            <h2>{filtered.length} įrašai</h2>
+            {filtered.length > 0 && <p className="operations-visible-count">Rodoma {visibleTransactions.length} iš {filtered.length} operacijų</p>}
+          </div>
+          <button className="secondary-button" onClick={exportCsv}><Download size={17}/>Eksportuoti CSV</button>
+        </div>
         <div className="table-scroll">
           <table className="operations-table">
             <thead><tr><th>Data</th><th>Aprašymas</th><th>Kategorija / kryptis</th><th>Asmuo</th><th>Sąskaita</th><th>Suma</th><th>Veiksmai</th></tr></thead>
-            <tbody>{filtered.map(item => {
+            <tbody>{visibleTransactions.map(item => {
               const operationNote = getOperationNote(item);
               const noteOpen = expandedNoteId === item.id;
               return (
@@ -1213,6 +1247,17 @@ function TransactionsCenter({ transactions, financialAccounts, onNew, onEdit, on
           </table>
           {filtered.length === 0 && <div className="empty-state">Pagal pasirinktus filtrus operacijų nerasta.</div>}
         </div>
+        {filtered.length > 0 && (
+          <div className="operations-load-more">
+            {hasMoreTransactions ? (
+              <button className="secondary-button load-more-button" onClick={() => setVisibleCount((count) => count + 50)}>
+                Rodyti dar {Math.min(50, filtered.length - visibleCount)}
+              </button>
+            ) : (
+              <span>Rodomos visos {filtered.length} operacijos</span>
+            )}
+          </div>
+        )}
       </section>
     </>
   );
