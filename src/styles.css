@@ -763,7 +763,7 @@ textarea:focus { border-color:#0ea5e9; box-shadow:0 0 0 3px rgba(14,165,233,.11)
   border-color:#dbeafe;
 }
 .analytics-insight-banner p:last-child { margin:0; color:#334155; line-height:1.7; font-size:14px; }
-.analytics-kpi-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:14px; margin-bottom:18px; }
+.analytics-kpi-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-bottom:18px; }
 .analytics-comparison-card,.analytics-person-comparison-card { margin-bottom:18px; }
 .analytics-comparison-highlights { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
 .analytics-comparison-highlights span { padding:7px 10px; border-radius:999px; font-size:11px; font-weight:800; }
@@ -789,7 +789,7 @@ textarea:focus { border-color:#0ea5e9; box-shadow:0 0 0 3px rgba(14,165,233,.11)
 .analytics-person-stats strong { margin-top:6px; font-size:16px; }
 .positive-value { color:#047857; }
 .negative-value { color:#dc2626; }
-@media (max-width:1450px) { .analytics-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (max-width:1450px) { .analytics-kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:900px) {
   .analytics-insight-banner { grid-template-columns:1fr; gap:12px; }
   .analytics-person-cards { grid-template-columns:1fr; }
@@ -918,3 +918,49 @@ input,select { transition:border-color .16s ease,box-shadow .16s ease,background
   color:#94a3b8;
   font-size:12px;
 }
+
+/* Investments V1.0 */
+.investment-empty-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 18px;
+  background: linear-gradient(135deg, #eff6ff, #f8fafc);
+  border-color: #bfdbfe;
+}
+.investment-empty-hero p:last-child { margin: 8px 0 0; color: #64748b; line-height: 1.55; }
+.investment-empty-icon { width: 58px; height: 58px; border-radius: 18px; display: grid; place-items: center; background: #dbeafe; color: #2563eb; }
+.investments-charts .card { min-height: 360px; }
+.chart-empty { height: 100%; display: grid; place-items: center; text-align: center; color: #94a3b8; padding: 30px; }
+.investment-filters { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 18px; align-items: end; margin-bottom: 18px; }
+.investment-filters label { margin: 0; }
+.investment-table { min-width: 850px; }
+.share-cell { min-width: 150px; display: grid; grid-template-columns: minmax(75px, 1fr) 54px; align-items: center; gap: 10px; }
+.share-track { height: 8px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
+.share-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2563eb, #06b6d4); }
+.share-cell b { font-size: 12px; color: #475569; text-align: right; }
+@media (max-width: 760px) {
+  .investment-empty-hero { grid-template-columns: 1fr; }
+  .investment-filters { grid-template-columns: 1fr; }
+}
+
+.type-switch.four { grid-template-columns: repeat(4, 1fr); }
+.transaction-icon.investment { background:#eef2ff; color:#4f46e5; }
+.transaction-amount.investment, .amount-cell.investment { color:#4f46e5; }
+.investment-note, .investment-warning { display:flex; gap:10px; align-items:flex-start; padding:12px 14px; border-radius:12px; margin:-2px 0 15px; font-size:13px; line-height:1.45; }
+.investment-note { background:#eef2ff; color:#4338ca; }
+.investment-warning { background:#fff7ed; color:#c2410c; }
+.topbar-actions { display:flex; gap:10px; align-items:center; }
+.investment-operations-card { margin-bottom:18px; }
+.investment-operations-table td:nth-child(2) strong, .investment-operations-table td:nth-child(2) span { display:block; }
+.investment-operations-table td:nth-child(2) span { margin-top:3px; color:#94a3b8; font-size:12px; }
+.primary-button:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+@media (max-width: 760px) { .type-switch.four { grid-template-columns:1fr 1fr; } .topbar-actions { width:100%; flex-direction:column; align-items:stretch; } }
+
+/* V2.3 – investavimo analitika */
+.metric-card.tone-investment { border-bottom-color:#8b5cf6; }
+.metric-card.tone-investment .metric-icon { color:#7c3aed; background:#f3e8ff; }
+.metric-card.tone-after-investment { border-bottom-color:#0891b2; }
+.metric-card.tone-after-investment .metric-icon { color:#0e7490; background:#cffafe; }
+.analytics-trend-card .recharts-legend-wrapper { font-size:12px; }

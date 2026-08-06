@@ -5,7 +5,7 @@ import {
   Plus, Search, Trash2, WalletCards, X, MessageSquareText
 } from "lucide-react";
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from "recharts";
 import { assetTypes, categories, demoAssets, demoFinancialAccounts, demoTransactions, people } from "./data/demo";
@@ -47,7 +47,7 @@ function categoryEmoji(category) {
     "Drabužiai": "👕", "Dovanos": "🎁", "Gyvūnai": "🐾", "Grožis": "✨",
     "Higiena": "🧴", "Maistas": "🍽️", "Medicina": "💊", "Mokesčiai": "🧾",
     "Pramogos": "🎬", "Vaikas": "🧸", "Evaldo asmeninės": "👤", "Rimos asmeninės": "👤",
-    "Atlyginimas": "💼", "Kita": "•"
+    "Atlyginimas": "💼", "Investavimas": "📈", "Kita": "•"
   };
   return icons[category] || "•";
 }
@@ -65,6 +65,7 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [assetOpen, setAssetOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
+  const [assetDefaultType, setAssetDefaultType] = useState("deposit");
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState(null);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -80,7 +81,18 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
   const totals = useMemo(() => {
     const income = periodTransactions.filter((i) => i.type === "income").reduce((s, i) => s + Number(i.amount), 0);
     const expenses = periodTransactions.filter((i) => i.type === "expense").reduce((s, i) => s + Number(i.amount), 0);
-    return { income, expenses, savings: income - expenses, savingsRate: income ? (income - expenses) / income * 100 : 0 };
+    const invested = periodTransactions.filter((i) => i.type === "investment").reduce((s, i) => s + Number(i.amount), 0);
+    const savings = income - expenses;
+    const savingsAfterInvestment = savings - invested;
+    return {
+      income,
+      expenses,
+      invested,
+      savings,
+      savingsAfterInvestment,
+      savingsRate: income ? savings / income * 100 : 0,
+      savingsAfterInvestmentRate: income ? savingsAfterInvestment / income * 100 : 0
+    };
   }, [periodTransactions]);
 
   const yearlyData = useMemo(() => MONTHS.map((month, index) => {
@@ -88,7 +100,9 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
     const rows = transactions.filter((item) => ym(item.date) === key);
     const income = rows.filter((i) => i.type === "income").reduce((s, i) => s + Number(i.amount), 0);
     const expenses = rows.filter((i) => i.type === "expense").reduce((s, i) => s + Number(i.amount), 0);
-    return { month: month.slice(0, 3), income, expenses, savings: income - expenses };
+    const invested = rows.filter((i) => i.type === "investment").reduce((s, i) => s + Number(i.amount), 0);
+    const savings = income - expenses;
+    return { month: month.slice(0, 3), income, expenses, savings, invested, savingsAfterInvestment: savings - invested };
   }), [transactions, selectedYear]);
 
   const categoryData = useMemo(() => {
@@ -102,7 +116,7 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
   const trendData = useMemo(() => {
     if (periodMode === "year") return yearlyData;
     const grouped = {};
-    periodTransactions.forEach((i) => {
+    periodTransactions.filter((i) => i.type === "income" || i.type === "expense").forEach((i) => {
       const day = i.date.slice(8, 10);
       if (!grouped[day]) grouped[day] = { day, income: 0, expenses: 0 };
       grouped[day][i.type === "income" ? "income" : "expenses"] += Number(i.amount);
@@ -126,6 +140,41 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
     assets.forEach((i) => grouped[typeLabel(i.type)] = (grouped[typeLabel(i.type)] || 0) + Number(i.amount));
     return Object.entries(grouped).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [assets]);
+
+  const investmentData = useMemo(() => {
+    const rows = assets.filter((asset) => asset.type === "investment");
+    const total = rows.reduce((sum, asset) => sum + Number(asset.amount), 0);
+    const byOwner = people.map((owner) => ({
+      name: owner,
+      value: rows.filter((asset) => asset.owner === owner).reduce((sum, asset) => sum + Number(asset.amount), 0)
+    }));
+    const byInstitutionMap = {};
+    rows.forEach((asset) => {
+      const institution = asset.institution?.trim() || "Kita";
+      byInstitutionMap[institution] = (byInstitutionMap[institution] || 0) + Number(asset.amount);
+    });
+    const byInstitution = Object.entries(byInstitutionMap)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+    return {
+      rows,
+      total,
+      byOwner,
+      byInstitution,
+      platforms: byInstitution.length,
+      largest: byInstitution[0] || null
+    };
+  }, [assets]);
+
+  const investmentHistory = useMemo(() => MONTHS.map((month, index) => {
+    const cutoff = `${selectedYear}-${String(index + 1).padStart(2, "0")}-31`;
+    return {
+      month: month.slice(0, 3),
+      value: assets
+        .filter((asset) => asset.type === "investment" && (asset.valueDate || asset.startDate || "1900-01-01") <= cutoff)
+        .reduce((sum, asset) => sum + Number(asset.amount), 0)
+    };
+  }), [assets, selectedYear]);
 
   const assetHistory = useMemo(() => MONTHS.map((month, index) => {
     const cutoff = `${selectedYear}-${String(index + 1).padStart(2, "0")}-31`;
@@ -175,6 +224,7 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
 
       if (transaction.type === "income" && accountId === account.id) balance += Number(transaction.amount);
       if (transaction.type === "expense" && accountId === account.id) balance -= Number(transaction.amount);
+      if (transaction.type === "investment" && accountId === account.id) balance -= Number(transaction.amount);
       if (transaction.type === "transfer" && fromId === account.id) balance -= Number(transaction.amount);
       if (transaction.type === "transfer" && toId === account.id) balance += Number(transaction.amount);
     });
@@ -334,6 +384,7 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
 
   function editAsset(asset) {
     setEditingAsset(asset);
+    setAssetDefaultType(asset.type || "deposit");
     setAssetOpen(true);
   }
 
@@ -426,10 +477,11 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
           <button className={`nav-item ${activePage === "budgets" ? "active" : ""}`} onClick={() => setActivePage("budgets")}>Biudžetai</button>
           <button className={`nav-item ${activePage === "accounts" ? "active" : ""}`} onClick={() => setActivePage("accounts")}>Paskyros</button>
           <button className={`nav-item ${activePage === "assets" ? "active" : ""}`} onClick={() => setActivePage("assets")}>Turtas</button>
+          <button className={`nav-item ${activePage === "investments" ? "active" : ""}`} onClick={() => setActivePage("investments")}>Investicijos</button>
           <button className={`nav-item ${activePage === "analytics" ? "active" : ""}`} onClick={() => setActivePage("analytics")}>Analitika</button>
         </nav>
         <div className="sidebar-footer cloud-footer">
-          <span>V2.0 · UI Polish</span>
+          <span>V2.3.1 · Investavimo rodiklis</span>
           <span className={`cloud-status ${cloudStatus}`}>{cloudStatus === "saving" ? "Saugoma…" : cloudStatus === "error" ? "Saugojimo klaida" : "Duomenys išsaugoti"}</span>
           <small>{userEmail}</small>
           <button onClick={onSignOut}>Atsijungti</button>
@@ -514,7 +566,25 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
             chartData={assetChartData}
             history={assetHistory}
             year={selectedYear}
-            onNew={() => { setEditingAsset(null); setAssetOpen(true); }}
+            onNew={() => { setEditingAsset(null); setAssetDefaultType("deposit"); setAssetOpen(true); }}
+            onEdit={editAsset}
+            onDuplicate={duplicateAsset}
+            onDelete={deleteAsset}
+          />
+        )}
+
+        {activePage === "investments" && (
+          <Investments
+            data={investmentData}
+            history={investmentHistory}
+            transactions={transactions}
+            year={selectedYear}
+            month={selectedMonth}
+            periodMode={periodMode}
+            onNew={() => { setEditingAsset(null); setAssetDefaultType("investment"); setAssetOpen(true); }}
+            onNewOperation={openNewTransaction}
+            onEditOperation={editTransaction}
+            onDeleteOperation={deleteTransaction}
             onEdit={editAsset}
             onDuplicate={duplicateAsset}
             onDelete={deleteAsset}
@@ -549,6 +619,7 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
       {assetOpen && (
         <AssetModal
           initial={editingAsset}
+          initialType={assetDefaultType}
           initialDate={`${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-01`}
           onClose={() => { setAssetOpen(false); setEditingAsset(null); }}
           onSubmit={submitAsset}
@@ -735,7 +806,9 @@ function AnalyticsCenter({ transactions, periodMode, year, month, periodRows, to
   const previousTotals = useMemo(() => {
     const income = previousRows.filter((item) => item.type === "income").reduce((sum, item) => sum + Number(item.amount), 0);
     const expenses = previousRows.filter((item) => item.type === "expense").reduce((sum, item) => sum + Number(item.amount), 0);
-    return { income, expenses, savings: income - expenses };
+    const invested = previousRows.filter((item) => item.type === "investment").reduce((sum, item) => sum + Number(item.amount), 0);
+    const savings = income - expenses;
+    return { income, expenses, invested, savings, savingsAfterInvestment: savings - invested };
   }, [previousRows]);
 
   const change = (current, previous) => {
@@ -746,7 +819,9 @@ function AnalyticsCenter({ transactions, periodMode, year, month, periodRows, to
   const incomeChange = change(totals.income, previousTotals.income);
   const expenseChange = change(totals.expenses, previousTotals.expenses);
   const savingsChange = change(totals.savings, previousTotals.savings);
-  const averageExpense = expenseRows.length ? totals.expenses / expenseRows.length : 0;
+  const investedChange = change(totals.invested, previousTotals.invested);
+  const savingsAfterInvestmentChange = change(totals.savingsAfterInvestment, previousTotals.savingsAfterInvestment);
+  const investmentRate = totals.income > 0 ? totals.invested / totals.income * 100 : null;
 
   const daysCovered = useMemo(() => {
     if (periodMode === "year") return new Date(year, 1, 29).getMonth() === 1 ? 366 : 365;
@@ -844,7 +919,7 @@ function AnalyticsCenter({ transactions, periodMode, year, month, periodRows, to
     const categorySentence = leadingCategory
       ? `Daugiausia išleista kategorijai „${leadingCategory.name}“ – ${money(leadingCategory.value)}.`
       : "Išlaidų operacijų šiame laikotarpyje nėra.";
-    return `${periodName} gauta ${money(totals.income)}, išleista ${money(totals.expenses)}, o laikotarpio rezultatas – ${money(totals.savings)}. ${categorySentence} ${comparison}`;
+    return `${periodName} gauta ${money(totals.income)}, išleista ${money(totals.expenses)}, sutaupyta ${money(totals.savings)} ir investuota ${money(totals.invested)}. Po investavimo liko ${money(totals.savingsAfterInvestment)}. ${categorySentence} ${comparison}`;
   }, [periodMode, year, month, totals, leadingCategory, expenseChange]);
 
   const ChangeLabel = ({ value, inverse = false }) => {
@@ -868,22 +943,26 @@ function AnalyticsCenter({ transactions, periodMode, year, month, periodRows, to
         <Metric tone="income" label="Pajamos" value={money(totals.income)} helper={<ChangeLabel value={incomeChange}/>} icon={<ArrowUpRight/>}/>
         <Metric tone="expense" label="Išlaidos" value={money(totals.expenses)} helper={<ChangeLabel value={expenseChange} inverse/>} icon={<ArrowDownRight/>}/>
         <Metric tone="saving" label="Sutaupyta" value={money(totals.savings)} helper={<ChangeLabel value={savingsChange}/>} icon={<PiggyBank/>}/>
+        <Metric tone="investment" label="Investuota" value={money(totals.invested)} helper={<ChangeLabel value={investedChange}/>} icon={<ArrowUpRight/>}/>
+        <Metric tone="after-investment" label="Santaupos po investavimo" value={money(totals.savingsAfterInvestment)} helper={<ChangeLabel value={savingsAfterInvestmentChange}/>} icon={<PiggyBank/>}/>
         <Metric tone="budget" label="Taupymo rodiklis" value={`${totals.savingsRate.toFixed(1)} %`} helper="Pajamų dalis po išlaidų" icon={<Gauge/>}/>
         <Metric tone="account" label="Vidutinė dienos išlaida" value={money(averageDailyExpense)} helper={`${daysCovered} laikotarpio dienos`} icon={<CalendarDays/>}/>
-        <Metric tone="default" label="Vidutinė operacija" value={money(averageExpense)} helper={`${expenseRows.length} išlaidų operacijos`} icon={<WalletCards/>}/>
+        <Metric tone="investment" label="Investavimo rodiklis" value={investmentRate === null ? "—" : `${investmentRate.toFixed(1)} %`} helper={investmentRate === null ? "Laikotarpiu pajamų nėra" : "Pajamų dalis, nukreipta investicijoms"} icon={<ArrowUpRight/>}/>
       </section>
 
       <section className="analytics-grid-main">
         <article className="card analytics-trend-card">
-          <div className="card-header"><div><p className="card-kicker">12 mėnesių dinamika</p><h2>Pajamos, išlaidos ir santaupos</h2></div></div>
+          <div className="card-header"><div><p className="card-kicker">12 mėnesių dinamika</p><h2>Pajamos, išlaidos, santaupos ir investavimas</h2></div></div>
           <div className="chart-wrap analytics-chart-large">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={yearlyData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false}/>
-                <XAxis dataKey="month"/><YAxis/><Tooltip formatter={money}/>
+                <XAxis dataKey="month"/><YAxis/><Tooltip formatter={money}/><Legend/>
                 <Bar dataKey="income" name="Pajamos" fill="#10b981" radius={[6,6,0,0]}/>
                 <Bar dataKey="expenses" name="Išlaidos" fill="#f97316" radius={[6,6,0,0]}/>
                 <Bar dataKey="savings" name="Santaupos" fill="#2563eb" radius={[6,6,0,0]}/>
+                <Bar dataKey="invested" name="Investuota" fill="#8b5cf6" radius={[6,6,0,0]}/>
+                <Bar dataKey="savingsAfterInvestment" name="Santaupos po investavimo" fill="#0891b2" radius={[6,6,0,0]}/>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -1133,12 +1212,12 @@ function TransactionsCenter({ transactions, financialAccounts, periodMode, year,
   }
 
   const filtered = useMemo(() => transactions.filter((item) => {
-    const haystack = `${item.description} ${item.notes || ""} ${item.category || ""} ${item.person || ""} ${item.account || ""} ${item.fromAccount || ""} ${item.toAccount || ""}`.toLowerCase();
+    const haystack = `${item.description} ${item.notes || ""} ${item.category || ""} ${item.person || ""} ${item.account || ""} ${item.fromAccount || ""} ${item.toAccount || ""} ${item.investmentName || ""} ${item.investmentInstitution || ""}`.toLowerCase();
     return (!query || haystack.includes(query.toLowerCase())) &&
       (!from || item.date >= from) && (!to || item.date <= to) &&
       (type === "all" || item.type === type) &&
       (person === "all" || item.person === person) &&
-      (account === "all" || item.account === account || item.fromAccount === account || item.toAccount === account) &&
+      (account === "all" || item.accountId === account || item.fromAccountId === account || item.toAccountId === account || item.account === account || item.fromAccount === account || item.toAccount === account) &&
       (category === "all" || item.category === category);
   }).sort((a,b) => b.date.localeCompare(a.date)), [transactions, query, from, to, type, person, account, category]);
 
@@ -1150,7 +1229,8 @@ function TransactionsCenter({ transactions, financialAccounts, periodMode, year,
     const income = filtered.filter((i) => i.type === "income").reduce((s,i) => s + Number(i.amount), 0);
     const expenses = filtered.filter((i) => i.type === "expense").reduce((s,i) => s + Number(i.amount), 0);
     const transfers = filtered.filter((i) => i.type === "transfer").reduce((s,i) => s + Number(i.amount), 0);
-    return { income, expenses, transfers, balance: income - expenses };
+    const investments = filtered.filter((i) => i.type === "investment").reduce((s,i) => s + Number(i.amount), 0);
+    return { income, expenses, transfers, investments, balance: income - expenses };
   }, [filtered]);
 
   function exportCsv() {
@@ -1170,10 +1250,11 @@ function TransactionsCenter({ transactions, financialAccounts, periodMode, year,
         <div><p className="eyebrow">Operacijų centras V2.0.1</p><h1>Operacijų centras</h1><p className="subtitle">Paieška, filtrai ir operacijų valdymas.</p></div>
         <button className="primary-button" onClick={onNew}><Plus size={18}/>Nauja operacija</button>
       </header>
-      <section className="metrics-grid four">
+      <section className="metrics-grid five">
         <Metric label="Pajamos" value={money(summary.income)} helper="Pagal filtrus" icon={<ArrowUpRight/>}/>
         <Metric label="Išlaidos" value={money(summary.expenses)} helper="Pagal filtrus" icon={<ArrowDownRight/>}/>
-        <Metric label="Perkėlimai" value={money(summary.transfers)} helper="Turto struktūros judėjimas" icon={<ArrowRightLeft/>}/>
+        <Metric label="Perkėlimai" value={money(summary.transfers)} helper="Tarp paskyrų" icon={<ArrowRightLeft/>}/>
+        <Metric label="Investuota" value={money(summary.investments)} helper="Investavimo operacijos" icon={<PiggyBank/>}/>
         <Metric label="Balansas" value={money(summary.balance)} helper={`${filtered.length} operacijos`} icon={<WalletCards/>}/>
       </section>
       <section className="card filters-card">
@@ -1181,7 +1262,7 @@ function TransactionsCenter({ transactions, financialAccounts, periodMode, year,
         <div className="filters-grid">
           <label>Nuo<input type="date" value={from} onChange={(e)=>setFrom(e.target.value)}/></label>
           <label>Iki<input type="date" value={to} onChange={(e)=>setTo(e.target.value)}/></label>
-          <label>Tipas<select value={type} onChange={(e)=>setType(e.target.value)}><option value="all">Visos</option><option value="income">Pajamos</option><option value="expense">Išlaidos</option><option value="transfer">Perkėlimai</option></select></label>
+          <label>Tipas<select value={type} onChange={(e)=>setType(e.target.value)}><option value="all">Visos</option><option value="income">Pajamos</option><option value="expense">Išlaidos</option><option value="transfer">Perkėlimai</option><option value="investment">Investavimas</option></select></label>
           <label>Asmuo<select value={person} onChange={(e)=>setPerson(e.target.value)}><option value="all">Visi</option>{people.map(x=><option key={x}>{x}</option>)}</select></label>
           <label>Paskyra<select value={account} onChange={(e)=>setAccount(e.target.value)}><option value="all">Visos</option>{financialAccounts.map((item)=><option key={item.id} value={item.id}>{item.name} · {item.owner}</option>)}</select></label>
           <label>Kategorija<select value={category} onChange={(e)=>setCategory(e.target.value)}><option value="all">Visos</option>{categories.map(x=><option key={x}>{x}</option>)}</select></label>
@@ -1209,11 +1290,11 @@ function TransactionsCenter({ transactions, financialAccounts, periodMode, year,
                     <td>
                       <div className="operation-category">
                         <span className="operation-category-icon" aria-hidden="true">
-                          {item.type === "transfer" ? "↔️" : categoryEmoji(item.category)}
+                          {item.type === "transfer" ? "↔️" : item.type === "investment" ? "📈" : categoryEmoji(item.category)}
                         </span>
-                        <strong>{item.type === "transfer" ? `${item.fromAccount} → ${item.toAccount}` : item.category}</strong>
+                        <strong>{item.type === "transfer" ? `${item.fromAccount} → ${item.toAccount}` : item.type === "investment" ? (item.investmentName || "Investicija") : item.category}</strong>
                       </div>
-                      <span>{item.type === "income" ? "Pajamos" : item.type === "expense" ? "Išlaidos" : "Perkėlimas"}</span>
+                      <span>{item.type === "income" ? "Pajamos" : item.type === "expense" ? "Išlaidos" : item.type === "investment" ? "Investavimas" : "Perkėlimas"}</span>
                     </td>
                     <td>
                       <div className="operation-description">
@@ -1234,7 +1315,7 @@ function TransactionsCenter({ transactions, financialAccounts, periodMode, year,
                     </td>
                     <td>{item.person || "—"}</td>
                     <td>{item.type === "transfer" ? "—" : item.account}</td>
-                    <td className={`amount-cell ${item.type}`}>{item.type === "income" ? "+" : item.type === "expense" ? "-" : ""}{money(item.amount)}</td>
+                    <td className={`amount-cell ${item.type}`}>{item.type === "income" ? "+" : item.type === "expense" || item.type === "investment" ? "-" : ""}{money(item.amount)}</td>
                     <td><div className="row-actions"><button title="Redaguoti" onClick={()=>onEdit(item)}><Pencil size={16}/></button><button title="Dubliuoti" onClick={()=>onDuplicate(item)}><Copy size={16}/></button><button title="Ištrinti" className="danger" onClick={()=>onDelete(item)}><Trash2 size={16}/></button></div></td>
                   </tr>
                   {operationNote && noteOpen && (
@@ -1335,6 +1416,76 @@ function Assets({ assets, summary, chartData, history, year, onNew, onEdit, onDu
 }
 
 
+function Investments({ data, history, transactions, year, month, periodMode, onNew, onNewOperation, onEditOperation, onDeleteOperation, onEdit, onDuplicate, onDelete }) {
+  const [query, setQuery] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("all");
+
+  const rows = useMemo(() => data.rows
+    .filter((asset) => {
+      const haystack = `${asset.name} ${asset.institution} ${asset.owner} ${asset.notes || ""}`.toLowerCase();
+      return (!query || haystack.includes(query.toLowerCase())) &&
+        (ownerFilter === "all" || asset.owner === ownerFilter);
+    })
+    .sort((a, b) => Number(b.amount) - Number(a.amount)), [data.rows, query, ownerFilter]);
+
+  const evaldas = data.byOwner.find((item) => item.name === "Evaldas")?.value || 0;
+  const rima = data.byOwner.find((item) => item.name === "Rima")?.value || 0;
+  const investmentOperations = useMemo(() => (transactions || [])
+    .filter((item) => item.type === "investment")
+    .filter((item) => periodMode === "year" ? item.date.startsWith(String(year)) : ym(item.date) === `${year}-${String(month + 1).padStart(2, "0")}`)
+    .sort((a, b) => b.date.localeCompare(a.date)), [transactions, year, month, periodMode]);
+  const investedInPeriod = investmentOperations.reduce((sum, item) => sum + Number(item.amount), 0);
+
+  return <>
+    <header className="topbar">
+      <div><p className="eyebrow">Investicijų modulis V1.1</p><h1>Šeimos investicijos</h1><p className="subtitle">Portfelio vertė, savininkai ir investavimo platformos vienoje vietoje.</p></div>
+      <div className="topbar-actions"><button className="secondary-button" onClick={onNewOperation}><Plus size={18}/>Investavimo operacija</button><button className="primary-button" onClick={onNew}><Plus size={18}/>Pridėti investiciją</button></div>
+    </header>
+
+    {!data.rows.length && <section className="card investment-empty-hero">
+      <div className="investment-empty-icon"><PiggyBank size={30}/></div>
+      <div><p className="card-kicker">Naujas turto sluoksnis</p><h2>Pridėkite pirmą investicinio portfelio įrašą</h2><p>Įrašykite bendrą platformos ar brokerio vertę. Investicijos bus įtrauktos į šeimos turtą, tačiau nebus skaičiuojamos kaip pajamos ar išlaidos.</p></div>
+      <button className="primary-button compact" onClick={onNew}><Plus size={17}/>Pridėti dabar</button>
+    </section>}
+
+    <section className="metrics-grid five">
+      <Metric tone="saving" label="Portfelio vertė" value={money(data.total)} helper={`${data.rows.length} investicijų įrašai`} icon={<PiggyBank/>}/>
+      <Metric label="Investuota laikotarpiu" value={money(investedInPeriod)} helper={`${investmentOperations.length} operacijos`} icon={<ArrowUpRight/>}/>
+      <Metric label="Evaldas" value={money(evaldas)} helper={data.total ? `${(evaldas / data.total * 100).toFixed(1)} % portfelio` : "Nėra duomenų"} icon={<WalletCards/>}/>
+      <Metric label="Rima" value={money(rima)} helper={data.total ? `${(rima / data.total * 100).toFixed(1)} % portfelio` : "Nėra duomenų"} icon={<WalletCards/>}/>
+      <Metric tone="account" label="Platformos" value={String(data.platforms)} helper={data.largest ? `Didžiausia: ${data.largest.name}` : "Dar nepridėta"} icon={<Gauge/>}/>
+    </section>
+
+    <section className="dashboard-grid investments-charts">
+      <ChartCard title="Portfelis pagal platformas">
+        {data.byInstitution.length ? <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data.byInstitution} dataKey="value" nameKey="name" innerRadius={58} outerRadius={94} paddingAngle={2}>{data.byInstitution.map((item,index)=><Cell key={item.name} fill={`hsl(${215+index*37} 68% 52%)`}/>)}</Pie><Tooltip formatter={money}/></PieChart></ResponsiveContainer> : <div className="chart-empty">Pridėjus investicijų čia bus rodoma portfelio struktūra.</div>}
+      </ChartCard>
+      <ChartCard title={`${year} m. investicijų vertė`}>
+        <ResponsiveContainer width="100%" height="100%"><AreaChart data={history}><defs><linearGradient id="investmentFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563eb" stopOpacity={0.28}/><stop offset="95%" stopColor="#2563eb" stopOpacity={0.02}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="month"/><YAxis/><Tooltip formatter={money}/><Area type="monotone" dataKey="value" name="Vertė" stroke="#2563eb" strokeWidth={3} fill="url(#investmentFill)"/></AreaChart></ResponsiveContainer>
+      </ChartCard>
+    </section>
+
+    <section className="card investment-filters">
+      <div className="search-box"><Search size={18}/><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Ieškoti pagal platformą, pavadinimą ar pastabą..."/></div>
+      <label>Savininkas<select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)}><option value="all">Visi savininkai</option><option>Evaldas</option><option>Rima</option><option>Šeima</option></select></label>
+    </section>
+
+    <section className="card investment-operations-card">
+      <div className="card-header"><div><p className="card-kicker">Investavimo srautai</p><h2>Investavimo operacijos</h2></div><button className="secondary-button" onClick={onNewOperation}><Plus size={17}/>Nauja operacija</button></div>
+      <div className="table-scroll"><table className="operations-table investment-operations-table"><thead><tr><th>Data</th><th>Investicija</th><th>Aprašymas</th><th>Asmuo</th><th>Iš paskyros</th><th>Suma</th><th>Veiksmai</th></tr></thead><tbody>{investmentOperations.map((item)=><tr key={item.id}><td>{dateLt(item.date)}</td><td><strong>{item.investmentName || "Investicija"}</strong><span>{item.investmentInstitution || ""}</span></td><td>{item.description}</td><td>{item.person || "—"}</td><td>{item.account || "—"}</td><td className="amount-cell investment">{money(item.amount)}</td><td><div className="row-actions"><button title="Redaguoti" onClick={()=>onEditOperation(item)}><Pencil size={16}/></button><button title="Ištrinti" className="danger" onClick={()=>onDeleteOperation(item)}><Trash2 size={16}/></button></div></td></tr>)}</tbody></table>{!investmentOperations.length && <div className="empty-state">Pasirinktu laikotarpiu investavimo operacijų nėra.</div>}</div>
+    </section>
+
+    <section className="card assets-table-card">
+      <div className="card-header"><div><p className="card-kicker">Investicinis portfelis</p><h2>Platformos ir brokeriai</h2></div><span className="row-count">{rows.length} įrašai</span></div>
+      <div className="table-scroll"><table className="assets-table investment-table"><thead><tr><th>Investicija</th><th>Platforma / įstaiga</th><th>Savininkas</th><th>Vertė</th><th>Portfelio dalis</th><th>Vertės data</th><th>Veiksmai</th></tr></thead><tbody>{rows.map((asset)=>{
+        const share = data.total ? Number(asset.amount) / data.total * 100 : 0;
+        return <tr key={asset.id}><td><strong>{asset.name}</strong><span>{asset.notes || ""}</span></td><td>{asset.institution || "—"}</td><td>{asset.owner}</td><td className="money-cell">{money(asset.amount)}</td><td><div className="share-cell"><div className="share-track"><span style={{width:`${Math.min(100,share)}%`}}/></div><b>{share.toFixed(1)} %</b></div></td><td>{dateLt(asset.valueDate)}</td><td><div className="row-actions"><button title="Redaguoti" onClick={()=>onEdit(asset)}><Pencil size={16}/></button><button title="Dubliuoti" onClick={()=>onDuplicate(asset)}><Copy size={16}/></button><button title="Ištrinti" className="danger" onClick={()=>onDelete(asset)}><Trash2 size={16}/></button></div></td></tr>;
+      })}</tbody></table>{!rows.length && data.rows.length > 0 && <div className="empty-state">Pagal pasirinktus filtrus investicijų nerasta.</div>}</div>
+    </section>
+  </>;
+}
+
+
 function FinancialAccounts({ accounts, summary, personalBudgets, onNew, onEdit, onDelete }) {
   const groups = ["Evaldas", "Rima", "Šeima"];
   return <>
@@ -1411,14 +1562,16 @@ function Metric({ label, value, helper, icon, onClick, tone = "default" }) {
 
 function TransactionRow({ item }) {
   const isTransfer = item.type === "transfer";
-  const icon = item.type === "income" ? <ArrowUpRight size={18}/> : item.type === "expense" ? <span className="category-emoji">{categoryEmoji(item.category)}</span> : <ArrowRightLeft size={18}/>;
-  const details = isTransfer ? `${item.fromAccount} → ${item.toAccount}` : `${item.category} · ${item.person} · ${item.account}`;
-  const prefix = item.type === "income" ? "+" : item.type === "expense" ? "-" : "";
+  const isInvestment = item.type === "investment";
+  const icon = item.type === "income" ? <ArrowUpRight size={18}/> : item.type === "expense" ? <span className="category-emoji">{categoryEmoji(item.category)}</span> : isInvestment ? <PiggyBank size={18}/> : <ArrowRightLeft size={18}/>;
+  const details = isTransfer ? `${item.fromAccount} → ${item.toAccount}` : isInvestment ? `${item.investmentName || "Investicija"} · ${item.person} · ${item.account}` : `${item.category} · ${item.person} · ${item.account}`;
+  const prefix = item.type === "income" ? "+" : item.type === "expense" || isInvestment ? "-" : "";
   return <div className="transaction-row"><div className={`transaction-icon ${item.type}`}>{icon}</div><div className="transaction-main"><strong>{item.description}</strong><span>{details}</span></div><div className="transaction-date">{dateLt(item.date)}</div><strong className={`transaction-amount ${item.type}`}>{prefix}{money(item.amount)}</strong></div>;
 }
 
 function TransactionModal({ initial, initialDate, assets, financialAccounts, onClose, onSubmit }) {
   const activeAccounts = financialAccounts || [];
+  const investmentAssets = (assets || []).filter((asset) => asset.type === "investment");
   const [form, setForm] = useState(initial || {
     date: initialDate,
     type: "expense",
@@ -1427,6 +1580,7 @@ function TransactionModal({ initial, initialDate, assets, financialAccounts, onC
     accountId: activeAccounts[0]?.id || "",
     fromAccountId: activeAccounts[0]?.id || "",
     toAccountId: activeAccounts[1]?.id || activeAccounts[0]?.id || "",
+    investmentAssetId: investmentAssets[0]?.id || "",
     description: "",
     notes: "",
     amount: "",
@@ -1435,6 +1589,7 @@ function TransactionModal({ initial, initialDate, assets, financialAccounts, onC
   });
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const isTransfer = form.type === "transfer";
+  const isInvestment = form.type === "investment";
   const selectedTarget = activeAccounts.find((account) => account.id === form.toAccountId);
   const canAssignPersonalBudget = isTransfer && selectedTarget?.type === "cash" && selectedTarget?.name.includes("piniginė");
 
@@ -1442,9 +1597,11 @@ function TransactionModal({ initial, initialDate, assets, financialAccounts, onC
     event.preventDefault();
     if (!form.description.trim() || Number(form.amount) <= 0) return;
     if (isTransfer && (!form.fromAccountId || !form.toAccountId || form.fromAccountId === form.toAccountId)) return;
+    if (isInvestment && (!form.accountId || !form.investmentAssetId)) return;
     const account = activeAccounts.find((item) => item.id === form.accountId);
     const from = activeAccounts.find((item) => item.id === form.fromAccountId);
     const to = activeAccounts.find((item) => item.id === form.toAccountId);
+    const investment = investmentAssets.find((item) => item.id === form.investmentAssetId);
     onSubmit(isTransfer ? {
       ...form,
       category: "Perkėlimas",
@@ -1453,6 +1610,14 @@ function TransactionModal({ initial, initialDate, assets, financialAccounts, onC
       toAccount: to?.name || "",
       personalBudget: canAssignPersonalBudget ? form.personalBudget : false,
       personalBudgetOwner: canAssignPersonalBudget && form.personalBudget ? selectedTarget.owner : ""
+    } : isInvestment ? {
+      ...form,
+      category: "Investavimas",
+      account: account?.name || "",
+      investmentName: investment?.name || "",
+      investmentInstitution: investment?.institution || "",
+      personalBudget: false,
+      personalBudgetOwner: ""
     } : {
       ...form,
       account: account?.name || ""
@@ -1461,13 +1626,14 @@ function TransactionModal({ initial, initialDate, assets, financialAccounts, onC
 
   return <div className="modal-backdrop"><form className="modal" onSubmit={submit}>
     <ModalHeader title={initial ? "Redaguoti operaciją" : "Pridėti operaciją"} onClose={onClose}/>
-    <div className="type-switch three">
+    <div className="type-switch four">
       <button type="button" className={form.type==="expense"?"active":""} onClick={()=>set("type","expense")}>Išlaidos</button>
       <button type="button" className={form.type==="income"?"active":""} onClick={()=>set("type","income")}>Pajamos</button>
       <button type="button" className={form.type==="transfer"?"active":""} onClick={()=>set("type","transfer")}>Perkėlimas</button>
+      <button type="button" className={form.type==="investment"?"active":""} onClick={()=>set("type","investment")}>Investavimas</button>
     </div>
     <label>Data<input type="date" min="2026-01-01" value={form.date} onChange={(e)=>set("date",e.target.value)}/></label>
-    <label>Trumpas aprašymas<input autoFocus value={form.description} onChange={(e)=>set("description",e.target.value)} placeholder={isTransfer ? "Pvz. Pinigai į Evaldo piniginę" : "Pvz. Lidl, atlyginimas..."}/></label>
+    <label>Trumpas aprašymas<input autoFocus value={form.description} onChange={(e)=>set("description",e.target.value)} placeholder={isTransfer ? "Pvz. Pinigai į Evaldo piniginę" : isInvestment ? "Pvz. Papildymas į Debitum" : "Pvz. Lidl, atlyginimas..."}/></label>
     <label>Platesnis aprašymas<textarea rows="3" value={form.notes || ""} onChange={(e)=>set("notes",e.target.value)} placeholder="Papildoma informacija apie operaciją (nebūtina)"/></label>
     {isTransfer ? <>
       <div className="form-grid">
@@ -1476,6 +1642,13 @@ function TransactionModal({ initial, initialDate, assets, financialAccounts, onC
       </div>
       {canAssignPersonalBudget && <label className="checkbox-label"><input type="checkbox" checked={Boolean(form.personalBudget)} onChange={(e)=>set("personalBudget",e.target.checked)}/><span>Priskirti {selectedTarget.owner} asmeniniam biudžetui</span></label>}
       <div className="transfer-note"><ArrowRightLeft size={17}/><span>Perkėlimas nekeičia šeimos pajamų ar išlaidų, bet pakeičia abiejų paskyrų likučius.</span></div>
+    </> : isInvestment ? <>
+      <div className="form-grid">
+        <label>Iš paskyros<select value={form.accountId || ""} onChange={(e)=>set("accountId",e.target.value)}>{activeAccounts.map((account)=><option key={account.id} value={account.id}>{account.name} · {account.owner}</option>)}</select></label>
+        <label>Investicija<select value={form.investmentAssetId || ""} onChange={(e)=>set("investmentAssetId",e.target.value)}><option value="">Pasirinkite investiciją</option>{investmentAssets.map((asset)=><option key={asset.id} value={asset.id}>{asset.name} · {asset.owner}</option>)}</select></label>
+      </div>
+      {!investmentAssets.length && <div className="investment-warning"><AlertTriangle size={17}/><span>Pirmiausia Investicijų puslapyje sukurkite bent vieną investiciją ar platformą.</span></div>}
+      <div className="investment-note"><PiggyBank size={17}/><span>Investavimas sumažina pasirinktos finansinės paskyros likutį, tačiau nėra skaičiuojamas kaip išlaidos.</span></div>
     </> : <div className="form-grid">
       <label>Kategorija<select value={form.category} onChange={(e)=>set("category",e.target.value)}>{categories.map(x=><option key={x}>{x}</option>)}</select></label>
       <label>Paskyra<select value={form.accountId || ""} onChange={(e)=>set("accountId",e.target.value)}>{activeAccounts.map((account)=><option key={account.id} value={account.id}>{account.name} · {account.owner}</option>)}</select></label>
@@ -1484,14 +1657,14 @@ function TransactionModal({ initial, initialDate, assets, financialAccounts, onC
       <label>Suma<input type="number" min="0" step="0.01" value={form.amount} onChange={(e)=>set("amount",e.target.value)}/></label>
       <label>Asmuo<select value={form.person || people[0]} onChange={(e)=>set("person",e.target.value)}>{people.map(x=><option key={x}>{x}</option>)}<option>Šeima</option></select></label>
     </div>
-    <button className="primary-button full">{initial ? "Išsaugoti pakeitimus" : "Išsaugoti operaciją"}</button>
+    <button className="primary-button full" disabled={isInvestment && !investmentAssets.length}>{initial ? "Išsaugoti pakeitimus" : "Išsaugoti operaciją"}</button>
   </form></div>;
 }
 
-function AssetModal({ initial, initialDate, onClose, onSubmit }) {
-  const [form,setForm]=useState(initial || {type:"deposit",name:"",institution:"",owner:"Šeima",amount:"",valueDate:initialDate,interestRate:"",startDate:initialDate,endDate:"",notes:""});
+function AssetModal({ initial, initialType = "deposit", initialDate, onClose, onSubmit }) {
+  const [form,setForm]=useState(initial || {type:initialType,name:"",institution:"",owner:"Šeima",amount:"",valueDate:initialDate,interestRate:"",startDate:initialDate,endDate:"",notes:""});
   const set=(k,v)=>setForm(x=>({...x,[k]:v}));
-  return <div className="modal-backdrop"><form className="modal" onSubmit={(e)=>{e.preventDefault(); if(form.name && Number(form.amount)>0) onSubmit(form);}}><ModalHeader title={initial ? "Redaguoti turto įrašą" : "Pridėti turto įrašą"} onClose={onClose}/><label>Turto tipas<select value={form.type} onChange={(e)=>set("type",e.target.value)}>{assetTypes.map((x)=><option key={x.value} value={x.value}>{x.label}</option>)}</select></label><label>Pavadinimas<input value={form.name} onChange={(e)=>set("name",e.target.value)} placeholder="Pvz. SEB terminuotas indėlis"/></label><div className="form-grid"><label>Įstaiga<input value={form.institution} onChange={(e)=>set("institution",e.target.value)}/></label><label>Savininkas<select value={form.owner} onChange={(e)=>set("owner",e.target.value)}><option>Evaldas</option><option>Rima</option><option>Šeima</option></select></label></div><div className="form-grid"><label>Vertė<input type="number" min="0" step="0.01" value={form.amount} onChange={(e)=>set("amount",e.target.value)}/></label><label>Vertės data<input type="date" value={form.valueDate || ""} onChange={(e)=>set("valueDate",e.target.value)}/></label></div>{form.type === "deposit" && <><div className="form-grid"><label>Palūkanos, %<input type="number" step="0.01" value={form.interestRate || ""} onChange={(e)=>set("interestRate",e.target.value)}/></label><label>Pradžia<input type="date" value={form.startDate || ""} onChange={(e)=>set("startDate",e.target.value)}/></label></div><label>Pabaiga<input type="date" value={form.endDate || ""} onChange={(e)=>set("endDate",e.target.value)}/></label></>}<label>Pastabos<textarea rows="3" value={form.notes || ""} onChange={(e)=>set("notes",e.target.value)} placeholder="Papildoma informacija"/></label><button className="primary-button full">{initial ? "Išsaugoti pakeitimus" : "Išsaugoti turtą"}</button></form></div>;
+  return <div className="modal-backdrop"><form className="modal" onSubmit={(e)=>{e.preventDefault(); if(form.name && Number(form.amount)>0) onSubmit(form);}}><ModalHeader title={initial ? "Redaguoti turto įrašą" : initialType === "investment" ? "Pridėti investiciją" : "Pridėti turto įrašą"} onClose={onClose}/><label>Turto tipas<select value={form.type} onChange={(e)=>set("type",e.target.value)}>{assetTypes.map((x)=><option key={x.value} value={x.value}>{x.label}</option>)}</select></label><label>Pavadinimas<input value={form.name} onChange={(e)=>set("name",e.target.value)} placeholder={form.type === "investment" ? "Pvz. Revolut Brokerage" : "Pvz. SEB terminuotas indėlis"}/></label><div className="form-grid"><label>Įstaiga<input value={form.institution} onChange={(e)=>set("institution",e.target.value)}/></label><label>Savininkas<select value={form.owner} onChange={(e)=>set("owner",e.target.value)}><option>Evaldas</option><option>Rima</option><option>Šeima</option></select></label></div><div className="form-grid"><label>Vertė<input type="number" min="0" step="0.01" value={form.amount} onChange={(e)=>set("amount",e.target.value)}/></label><label>Vertės data<input type="date" value={form.valueDate || ""} onChange={(e)=>set("valueDate",e.target.value)}/></label></div>{form.type === "deposit" && <><div className="form-grid"><label>Palūkanos, %<input type="number" step="0.01" value={form.interestRate || ""} onChange={(e)=>set("interestRate",e.target.value)}/></label><label>Pradžia<input type="date" value={form.startDate || ""} onChange={(e)=>set("startDate",e.target.value)}/></label></div><label>Pabaiga<input type="date" value={form.endDate || ""} onChange={(e)=>set("endDate",e.target.value)}/></label></>}<label>Pastabos<textarea rows="3" value={form.notes || ""} onChange={(e)=>set("notes",e.target.value)} placeholder="Papildoma informacija"/></label><button className="primary-button full">{initial ? "Išsaugoti pakeitimus" : form.type === "investment" ? "Išsaugoti investiciją" : "Išsaugoti turtą"}</button></form></div>;
 }
 
 function BudgetModal({ initial, onClose, onSubmit }) {
