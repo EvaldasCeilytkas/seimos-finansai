@@ -606,7 +606,7 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
           <button className={`nav-item ${activePage === "analytics" ? "active" : ""}`} onClick={() => setActivePage("analytics")}>Analitika</button>
         </nav>
         <div className="sidebar-footer cloud-footer">
-          <span>V2.5.1 · Šeimos investicijų istorija</span>
+          <span>V2.5.3 · Pinigų srautų grafikas</span>
           <span className={`cloud-status ${cloudStatus}`}>{cloudStatus === "saving" ? "Saugoma…" : cloudStatus === "error" ? "Saugojimo klaida" : "Duomenys išsaugoti"}</span>
           <small>{userEmail}</small>
           <button onClick={onSignOut}>Atsijungti</button>
@@ -713,6 +713,7 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
             onDeleteSnapshot={deleteInvestmentSnapshot}
             onNewOperation={openNewTransaction}
             onEditOperation={editTransaction}
+            onDuplicateOperation={duplicateTransaction}
             onDeleteOperation={deleteTransaction}
             onEdit={editAsset}
             onDuplicate={duplicateAsset}
@@ -954,6 +955,8 @@ function Overview({ totals, periodMode, year, month, trendData, categoryData, ro
 function AnalyticsCenter({ transactions, periodMode, year, month, periodRows, totals, yearlyData, categoryData }) {
   const [expandedCategory, setExpandedCategory] = useState(null);
   const [categorySort, setCategorySort] = useState("amount");
+  const [cashFlowRange, setCashFlowRange] = useState("12m");
+  const [cashFlowView, setCashFlowView] = useState("bars");
   const expenseRows = useMemo(() => periodRows.filter((item) => item.type === "expense"), [periodRows]);
   const incomeRows = useMemo(() => periodRows.filter((item) => item.type === "income"), [periodRows]);
 
@@ -994,7 +997,60 @@ function AnalyticsCenter({ transactions, periodMode, year, month, periodRows, to
   }, [periodMode, year, month]);
   const averageDailyExpense = totals.expenses / daysCovered;
 
-  const topCategories = useMemo(() => categoryData.slice(0, 8).map((item) => ({
+  const cashFlowAll = useMemo(() => {
+    const monthly = {};
+    transactions.forEach((item) => {
+      if (!item.date || !["income", "expense", "investment"].includes(item.type)) return;
+      const key = ym(item.date);
+      if (!key) return;
+      if (!monthly[key]) monthly[key] = { key, income: 0, expenses: 0, invested: 0 };
+      if (item.type === "income") monthly[key].income += Number(item.amount || 0);
+      if (item.type === "expense") monthly[key].expenses += Number(item.amount || 0);
+      if (item.type === "investment") monthly[key].invested += Number(item.amount || 0);
+    });
+    const keys = Object.keys(monthly).sort();
+    if (!keys.length) return [];
+    const [startY, startM] = keys[0].split("-").map(Number);
+    const [endY, endM] = keys[keys.length - 1].split("-").map(Number);
+    const result = [];
+    let y = startY, m = startM;
+    while (y < endY || (y === endY && m <= endM)) {
+      const key = `${y}-${String(m).padStart(2, "0")}`;
+      const row = monthly[key] || { key, income: 0, expenses: 0, invested: 0 };
+      const savings = row.income - row.expenses;
+      result.push({
+        ...row,
+        savings,
+        savingsAfterInvestment: savings - row.invested,
+        monthLabel: `${MONTHS[m - 1].slice(0, 3)} ${String(y).slice(2)}`,
+        fullLabel: `${MONTHS[m - 1]} ${y}`
+      });
+      m += 1;
+      if (m === 13) { m = 1; y += 1; }
+    }
+    return result;
+  }, [transactions]);
+
+  const cashFlowData = useMemo(() => {
+    const count = cashFlowRange === "3m" ? 3 : cashFlowRange === "6m" ? 6 : cashFlowRange === "12m" ? 12 : null;
+    return count ? cashFlowAll.slice(-count) : cashFlowAll;
+  }, [cashFlowAll, cashFlowRange]);
+
+  const CashFlowTooltip = ({ active, payload }) => {
+    if (!active || !payload?.length) return null;
+    const row = payload[0]?.payload;
+    if (!row) return null;
+    const values = [
+      ["Pajamos", row.income],
+      ["Išlaidos", row.expenses],
+      ["Santaupos", row.savings],
+      ["Investuota", row.invested],
+      ["Po investavimo", row.savingsAfterInvestment]
+    ];
+    return <div className="cashflow-tooltip"><strong>{row.fullLabel}</strong>{values.map(([label,value])=><div key={label}><span>{label}</span><b>{money(value)}</b></div>)}</div>;
+  };
+
+  const topCategories = useMemo(() => categoryData.map((item) => ({
     ...item,
     share: totals.expenses ? item.value / totals.expenses * 100 : 0
   })), [categoryData, totals.expenses]);
@@ -1114,25 +1170,47 @@ function AnalyticsCenter({ transactions, periodMode, year, month, periodRows, to
       </section>
 
       <section className="analytics-grid-main">
-        <article className="card analytics-trend-card">
-          <div className="card-header"><div><p className="card-kicker">12 mėnesių dinamika</p><h2>Pajamos, išlaidos, santaupos ir investavimas</h2></div></div>
-          <div className="chart-wrap analytics-chart-large">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={yearlyData}>
+        <article className="card analytics-trend-card cashflow-card">
+          <div className="card-header chart-filter-header">
+            <div><p className="card-kicker">Pinigų srautai</p><h2>Pinigų srautų dinamika</h2></div>
+            <div className="cashflow-controls">
+              <div className="chart-view-tabs" aria-label="Grafiko tipas">
+                <button className={cashFlowView === "bars" ? "active" : ""} onClick={()=>setCashFlowView("bars")}>Stulpeliai</button>
+                <button className={cashFlowView === "lines" ? "active" : ""} onClick={()=>setCashFlowView("lines")}>Linijos</button>
+              </div>
+              <div className="chart-range-tabs" aria-label="Pinigų srautų grafiko laikotarpis">
+                {[["3m","3 mėn."],["6m","6 mėn."],["12m","1 m."],["all","Visi"]].map(([key,label])=><button key={key} className={cashFlowRange===key?"active":""} onClick={()=>setCashFlowRange(key)}>{label}</button>)}
+              </div>
+            </div>
+          </div>
+          <div className="cashflow-legend" aria-label="Grafiko legenda">
+            <span className="income">Pajamos</span><span className="expenses">Išlaidos</span><span className="savings">Santaupos</span><span className="invested">Investuota</span><span className="after">Po investavimo</span>
+          </div>
+          <div className="chart-wrap analytics-chart-large cashflow-chart-wrap">
+            {cashFlowData.length ? <ResponsiveContainer width="100%" height="100%">
+              {cashFlowView === "bars" ? <BarChart data={cashFlowData} barCategoryGap="24%" margin={{top:8,right:12,left:2,bottom:4}}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false}/>
-                <XAxis dataKey="month"/><YAxis/><Tooltip formatter={money}/><Legend/>
-                <Bar dataKey="income" name="Pajamos" fill="#10b981" radius={[6,6,0,0]}/>
-                <Bar dataKey="expenses" name="Išlaidos" fill="#f97316" radius={[6,6,0,0]}/>
-                <Bar dataKey="savings" name="Santaupos" fill="#2563eb" radius={[6,6,0,0]}/>
-                <Bar dataKey="invested" name="Investuota" fill="#8b5cf6" radius={[6,6,0,0]}/>
-                <Bar dataKey="savingsAfterInvestment" name="Santaupos po investavimo" fill="#0891b2" radius={[6,6,0,0]}/>
-              </BarChart>
-            </ResponsiveContainer>
+                <XAxis dataKey="monthLabel"/><YAxis/><Tooltip content={<CashFlowTooltip/>}/>
+                <Bar dataKey="income" name="Pajamos" fill="#10b981" radius={[7,7,0,0]} maxBarSize={34}/>
+                <Bar dataKey="expenses" name="Išlaidos" fill="#f97316" radius={[7,7,0,0]} maxBarSize={34}/>
+                <Bar dataKey="savings" name="Santaupos" fill="#2563eb" radius={[7,7,0,0]} maxBarSize={34}/>
+                <Bar dataKey="invested" name="Investuota" fill="#8b5cf6" radius={[7,7,0,0]} maxBarSize={34}/>
+                <Bar dataKey="savingsAfterInvestment" name="Po investavimo" fill="#0891b2" radius={[7,7,0,0]} maxBarSize={34}/>
+              </BarChart> : <LineChart data={cashFlowData} margin={{top:8,right:14,left:2,bottom:4}}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false}/>
+                <XAxis dataKey="monthLabel"/><YAxis/><Tooltip content={<CashFlowTooltip/>}/>
+                <Line type="monotone" dataKey="income" name="Pajamos" stroke="#10b981" strokeWidth={3} dot={{r:3}} activeDot={{r:5}}/>
+                <Line type="monotone" dataKey="expenses" name="Išlaidos" stroke="#f97316" strokeWidth={3} dot={{r:3}} activeDot={{r:5}}/>
+                <Line type="monotone" dataKey="savings" name="Santaupos" stroke="#2563eb" strokeWidth={3} dot={{r:3}} activeDot={{r:5}}/>
+                <Line type="monotone" dataKey="invested" name="Investuota" stroke="#8b5cf6" strokeWidth={3} dot={{r:3}} activeDot={{r:5}}/>
+                <Line type="monotone" dataKey="savingsAfterInvestment" name="Po investavimo" stroke="#0891b2" strokeWidth={3} dot={{r:3}} activeDot={{r:5}}/>
+              </LineChart>}
+            </ResponsiveContainer> : <div className="empty-state">Pinigų srautų istorijos dar nėra.</div>}
           </div>
         </article>
 
         <article className="card analytics-pie-card">
-          <div className="card-header"><div><p className="card-kicker">Išlaidų struktūra</p><h2>Pagal kategorijas</h2></div></div>
+          <div className="card-header"><div><p className="card-kicker">Išlaidų struktūra</p><h2>Pagal kategorijas</h2></div><strong className="analytics-pie-total">{money(totals.expenses)}</strong></div>
           {categoryData.length ? (
             <>
               <div className="analytics-pie-wrap">
@@ -1141,13 +1219,12 @@ function AnalyticsCenter({ transactions, periodMode, year, month, periodRows, to
                     <Pie data={categoryData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={94} paddingAngle={2}>
                       {categoryData.map((item, index) => <Cell key={item.name} fill={`hsl(${205 + index * 31} 68% 52%)`}/>)}
                     </Pie>
-                    <Tooltip formatter={money}/>
+                    <Tooltip formatter={(value, name) => [money(value), name]}/>
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="analytics-pie-center"><strong>{money(totals.expenses)}</strong><span>Iš viso</span></div>
               </div>
-              <div className="analytics-mini-legend">
-                {topCategories.slice(0, 5).map((item) => <div key={item.name}><span>{item.name}</span><strong>{item.share.toFixed(1)} %</strong></div>)}
+              <div className="analytics-mini-legend analytics-full-legend">
+                {topCategories.map((item) => <div key={item.name}><span>{item.name}</span><span className="analytics-legend-values"><b>{money(item.value)}</b><strong>{item.share.toFixed(1)} %</strong></span></div>)}
               </div>
             </>
           ) : <div className="empty-state">Pasirinktam laikotarpiui išlaidų nėra.</div>}
@@ -1575,7 +1652,8 @@ function Assets({ assets, summary, chartData, history, year, onNew, onEdit, onDu
   );
 }
 
-function Investments({ data, history, snapshots, transactions, year, month, periodMode, onNewSnapshot, onEditSnapshot, onDeleteSnapshot, onNewOperation, onEditOperation, onDeleteOperation }) {
+function Investments({ data, history, snapshots, transactions, year, month, periodMode, onNewSnapshot, onEditSnapshot, onDeleteSnapshot, onNewOperation, onEditOperation, onDuplicateOperation, onDeleteOperation }) {
+  const [chartRange, setChartRange] = useState("12m");
   const investmentOperations = transactions
     .filter((item) => item.type === "investment")
     .filter((item) => periodMode === "year" ? item.date?.startsWith(String(year)) : ym(item.date) === `${year}-${String(month + 1).padStart(2, "0")}`)
@@ -1586,10 +1664,19 @@ function Investments({ data, history, snapshots, transactions, year, month, peri
   const latestEvaldas = Number(latest?.evaldas || 0);
   const latestRima = Number(latest?.rima || 0);
   const latestTotal = latest?.evaldas == null && latest?.rima == null ? Number(latest?.value || 0) : latestEvaldas + latestRima;
+  const investmentChartAll = sortedSnapshots.map((row) => {
+    const evaldas = Number(row.evaldas || 0);
+    const rima = Number(row.rima || 0);
+    const total = row.evaldas == null && row.rima == null ? Number(row.value || 0) : evaldas + rima;
+    const [y, m] = String(row.monthKey || "").split("-");
+    return { ...row, label: `${MONTHS[Number(m)-1]?.slice(0,3) || m} ${String(y).slice(2)}`, evaldas, rima, total };
+  });
+  const rangeCount = chartRange === "3m" ? 3 : chartRange === "6m" ? 6 : chartRange === "12m" ? 12 : null;
+  const investmentChartData = rangeCount ? investmentChartAll.slice(-rangeCount) : investmentChartAll;
 
   return <>
     <header className="topbar">
-      <div><p className="eyebrow">Investicijų modulis V2.5.1</p><h1>Šeimos investicijos</h1><p className="subtitle">Evaldo ir Rimos portfelio vertė bei faktinė mėnesio pabaigos istorija.</p></div>
+      <div><p className="eyebrow">Investicijų modulis V2.5.3</p><h1>Šeimos investicijos</h1><p className="subtitle">Evaldo ir Rimos portfelio vertė bei faktinė mėnesio pabaigos istorija.</p></div>
       <div className="topbar-actions"><button className="secondary-button" onClick={onNewOperation}><Plus size={18}/>Investavimo operacija</button><button className="primary-button" onClick={onNewSnapshot}><Plus size={18}/>Mėnesio vertė</button></div>
     </header>
 
@@ -1601,9 +1688,9 @@ function Investments({ data, history, snapshots, transactions, year, month, peri
     </section>
 
     <section className="card investment-history-chart-card">
-      <div className="card-header"><div><p className="card-kicker">MĖNESIO PABAIGOS VERTĖS</p><h2>{year} m. investicijų dinamika</h2></div><button className="secondary-button" onClick={onNewSnapshot}><Plus size={16}/> Naujas įrašas</button></div>
+      <div className="card-header chart-filter-header"><div><p className="card-kicker">MĖNESIO PABAIGOS VERTĖS</p><h2>Investicijų dinamika</h2></div><div className="chart-header-actions"><div className="chart-range-tabs" aria-label="Investicijų grafiko laikotarpis">{[["3m","3 mėn."],["6m","6 mėn."],["12m","1 m."],["all","Visi"]].map(([key,label])=><button key={key} className={chartRange===key?"active":""} onClick={()=>setChartRange(key)}>{label}</button>)}</div><button className="secondary-button" onClick={onNewSnapshot}><Plus size={16}/> Naujas įrašas</button></div></div>
       <div className="investment-history-chart">
-        {history.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={history} margin={{top:16,right:18,left:4,bottom:4}}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="month"/><YAxis/><Tooltip formatter={money}/><Legend/><Line type="monotone" dataKey="evaldas" name="Evaldas" stroke="#2563eb" strokeWidth={3} dot={{r:4}} activeDot={{r:6}}/><Line type="monotone" dataKey="rima" name="Rima" stroke="#a21caf" strokeWidth={3} dot={{r:4}} activeDot={{r:6}}/><Line type="monotone" dataKey="total" name="Bendra vertė" stroke="#0891b2" strokeWidth={4} dot={{r:4}} activeDot={{r:7}}/></LineChart></ResponsiveContainer> : <div className="networth-empty"><PiggyBank size={34}/><strong>Istorinių investicijų duomenų dar nėra</strong><span>Įrašykite Evaldo ir Rimos portfelio vertes. Bendra suma bus apskaičiuota automatiškai.</span><button className="secondary-button" onClick={onNewSnapshot}><Plus size={16}/> Pridėti pirmą įrašą</button></div>}
+        {investmentChartData.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={investmentChartData} margin={{top:16,right:18,left:4,bottom:4}}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="label"/><YAxis/><Tooltip formatter={money}/><Legend/><Line type="monotone" dataKey="evaldas" name="Evaldas" stroke="#2563eb" strokeWidth={3} dot={{r:4}} activeDot={{r:6}}/><Line type="monotone" dataKey="rima" name="Rima" stroke="#a21caf" strokeWidth={3} dot={{r:4}} activeDot={{r:6}}/><Line type="monotone" dataKey="total" name="Bendra vertė" stroke="#0891b2" strokeWidth={4} dot={{r:4}} activeDot={{r:7}}/></LineChart></ResponsiveContainer> : <div className="networth-empty"><PiggyBank size={34}/><strong>Istorinių investicijų duomenų dar nėra</strong><span>Įrašykite Evaldo ir Rimos portfelio vertes. Bendra suma bus apskaičiuota automatiškai.</span><button className="secondary-button" onClick={onNewSnapshot}><Plus size={16}/> Pridėti pirmą įrašą</button></div>}
       </div>
     </section>
 
@@ -1619,12 +1706,13 @@ function Investments({ data, history, snapshots, transactions, year, month, peri
 
     <section className="card investment-operations-card">
       <div className="card-header"><div><p className="card-kicker">Investavimo srautai</p><h2>Investavimo operacijos</h2></div><button className="secondary-button" onClick={onNewOperation}><Plus size={17}/>Nauja operacija</button></div>
-      <div className="table-scroll"><table className="operations-table investment-operations-table"><thead><tr><th>Data</th><th>Investicija</th><th>Aprašymas</th><th>Asmuo</th><th>Iš paskyros</th><th>Suma</th><th>Veiksmai</th></tr></thead><tbody>{investmentOperations.map((item)=><tr key={item.id}><td>{dateLt(item.date)}</td><td><strong>{item.investmentName || "Investicija"}</strong><span>{item.investmentInstitution || ""}</span></td><td>{item.description}</td><td>{item.person || "—"}</td><td>{item.account || "—"}</td><td className="amount-cell investment">{money(item.amount)}</td><td><div className="row-actions"><button title="Redaguoti" onClick={()=>onEditOperation(item)}><Pencil size={16}/></button><button title="Ištrinti" className="danger" onClick={()=>onDeleteOperation(item)}><Trash2 size={16}/></button></div></td></tr>)}</tbody></table>{!investmentOperations.length && <div className="empty-state">Pasirinktu laikotarpiu investavimo operacijų nėra.</div>}</div>
+      <div className="table-scroll"><table className="operations-table investment-operations-table"><thead><tr><th>Data</th><th>Investicija</th><th>Aprašymas</th><th>Asmuo</th><th>Iš paskyros</th><th>Suma</th><th>Veiksmai</th></tr></thead><tbody>{investmentOperations.map((item)=><tr key={item.id}><td>{dateLt(item.date)}</td><td><strong>{item.investmentName || "Investicija"}</strong><span>{item.investmentInstitution || ""}</span></td><td>{item.description}</td><td>{item.person || "—"}</td><td>{item.account || "—"}</td><td className="amount-cell investment">{money(item.amount)}</td><td><div className="row-actions"><button title="Redaguoti" onClick={()=>onEditOperation(item)}><Pencil size={16}/></button><button title="Dubliuoti" onClick={()=>onDuplicateOperation(item)}><Copy size={16}/></button><button title="Ištrinti" className="danger" onClick={()=>onDeleteOperation(item)}><Trash2 size={16}/></button></div></td></tr>)}</tbody></table>{!investmentOperations.length && <div className="empty-state">Pasirinktu laikotarpiu investavimo operacijų nėra.</div>}</div>
     </section>
   </>;
 }
 
 function NetWorth({ data, year, snapshots, onNewSnapshot, onEditSnapshot, onDeleteSnapshot, onAccounts, onAssets, onInvestments }) {
+  const [chartRange, setChartRange] = useState("12m");
   const allHistory = [...snapshots].sort((a, b) => a.monthKey.localeCompare(b.monthKey));
   const latestSaved = allHistory[allHistory.length - 1];
   const previousSaved = allHistory[allHistory.length - 2];
@@ -1638,6 +1726,12 @@ function NetWorth({ data, year, snapshots, onNewSnapshot, onEditSnapshot, onDele
   const previousValue = snapshotValue(previousSaved);
   const change = latestValue !== null && previousValue !== null ? latestValue - previousValue : null;
   const yearRows = allHistory.filter((row) => row.monthKey.startsWith(String(year))).reverse();
+  const netWorthChartAll = allHistory.map((row) => {
+    const [y, m] = String(row.monthKey || "").split("-");
+    return { ...row, label: `${MONTHS[Number(m)-1]?.slice(0,3) || m} ${String(y).slice(2)}`, value: snapshotValue(row) };
+  });
+  const rangeCount = chartRange === "3m" ? 3 : chartRange === "6m" ? 6 : chartRange === "12m" ? 12 : null;
+  const netWorthChartData = rangeCount ? netWorthChartAll.slice(-rangeCount) : netWorthChartAll;
   return <>
     <header className="topbar">
       <div><p className="eyebrow">V2.4.2 · Indėliai ir Net Worth</p><h1>Grynasis turtas</h1><p className="subtitle">Dabartinė turto vertė ir tikrais mėnesio pabaigos įrašais paremta istorija.</p></div>
@@ -1658,9 +1752,10 @@ function NetWorth({ data, year, snapshots, onNewSnapshot, onEditSnapshot, onDele
     </section>
 
     <section className="dashboard-grid networth-charts">
-      <ChartCard title={`${year} m. grynojo turto dinamika`}>
-        {data.history.length ? <ResponsiveContainer width="100%" height="100%"><AreaChart data={data.history}><defs><linearGradient id="netWorthFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.28}/><stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.02}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="month"/><YAxis/><Tooltip formatter={money}/><Area type="monotone" dataKey="value" name="Grynasis turtas" stroke="#0284c7" strokeWidth={3} fill="url(#netWorthFill)"/></AreaChart></ResponsiveContainer> : <div className="networth-empty"><PiggyBank size={34}/><strong>Istorinių duomenų dar nėra</strong><span>Pridėkite pirmą mėnesio pabaigos įrašą. Grafike bus rodomi tik jūsų išsaugoti duomenys.</span><button className="secondary-button" onClick={onNewSnapshot}><Plus size={16}/> Pridėti pirmą įrašą</button></div>}
-      </ChartCard>
+      <article className="card chart-card">
+        <div className="card-header chart-filter-header"><div><p className="card-kicker">Analitika</p><h2>Grynojo turto dinamika</h2></div><div className="chart-range-tabs" aria-label="Grynojo turto grafiko laikotarpis">{[["3m","3 mėn."],["6m","6 mėn."],["12m","1 m."],["all","Visi"]].map(([key,label])=><button key={key} className={chartRange===key?"active":""} onClick={()=>setChartRange(key)}>{label}</button>)}</div></div>
+        <div className="chart-wrap">{netWorthChartData.length ? <ResponsiveContainer width="100%" height="100%"><AreaChart data={netWorthChartData}><defs><linearGradient id="netWorthFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.28}/><stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.02}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="label"/><YAxis/><Tooltip formatter={money}/><Area type="monotone" dataKey="value" name="Grynasis turtas" stroke="#0284c7" strokeWidth={3} fill="url(#netWorthFill)"/></AreaChart></ResponsiveContainer> : <div className="networth-empty"><PiggyBank size={34}/><strong>Istorinių duomenų dar nėra</strong><span>Pridėkite pirmą mėnesio pabaigos įrašą. Grafike bus rodomi tik jūsų išsaugoti duomenys.</span><button className="secondary-button" onClick={onNewSnapshot}><Plus size={16}/> Pridėti pirmą įrašą</button></div>}</div>
+      </article>
       <ChartCard title="Turto struktūra šiandien">
         {data.breakdown.length ? <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data.breakdown} dataKey="value" nameKey="name" innerRadius={58} outerRadius={94} paddingAngle={3}>{data.breakdown.map((item,index)=><Cell key={item.name} fill={`hsl(${195+index*48} 70% 50%)`}/>)}</Pie><Tooltip formatter={money}/><Legend/></PieChart></ResponsiveContainer> : <div className="chart-empty">Pridėjus turto čia bus rodoma jo struktūra.</div>}
       </ChartCard>

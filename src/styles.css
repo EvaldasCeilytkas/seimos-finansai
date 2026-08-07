@@ -985,3 +985,49 @@ input,select { transition:border-color .16s ease,box-shadow .16s ease,background
 @media (max-width: 760px) {
   .investment-history-chart { height: 340px; }
 }
+
+/* V2.5.2 · grafikų laikotarpiai, investicijų dubliavimas, analitikos diagramos QA */
+.chart-filter-header { gap: 18px; align-items: center; }
+.chart-header-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end; }
+.chart-range-tabs { display:inline-flex; align-items:center; gap:4px; padding:4px; border-radius:12px; background:#f1f5f9; }
+.chart-range-tabs button { border:0; background:transparent; color:#64748b; padding:8px 11px; border-radius:9px; font:inherit; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap; }
+.chart-range-tabs button:hover { color:#0f172a; background:#e2e8f0; }
+.chart-range-tabs button.active { color:#0f172a; background:#fff; box-shadow:0 1px 3px rgba(15,23,42,.12); }
+.analytics-pie-total { font-size:18px; color:#0f172a; white-space:nowrap; }
+.analytics-full-legend { margin-top:10px; gap:8px; }
+.analytics-full-legend > div { padding:3px 0; border-bottom:1px solid #f1f5f9; align-items:center; }
+.analytics-full-legend > div:last-child { border-bottom:0; }
+.analytics-legend-values { display:flex; align-items:center; justify-content:flex-end; gap:12px; white-space:nowrap; }
+.analytics-legend-values b { font-weight:700; color:#475569; }
+.analytics-legend-values strong { min-width:52px; text-align:right; color:#0f172a; }
+@media (max-width: 760px) {
+  .chart-filter-header { align-items:flex-start; flex-direction:column; }
+  .chart-header-actions { width:100%; justify-content:space-between; }
+  .chart-range-tabs { max-width:100%; flex-wrap:wrap; }
+  .analytics-legend-values b { display:none; }
+}
+
+/* V2.5.3 · pinigų srautų grafiko filtrai ir UI polish */
+.cashflow-card .card-header { gap:18px; align-items:flex-start; }
+.cashflow-controls { display:flex; align-items:center; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+.chart-view-tabs { display:inline-flex; align-items:center; gap:4px; padding:4px; border-radius:12px; background:#eef2f7; }
+.chart-view-tabs button { border:0; background:transparent; color:#64748b; padding:8px 11px; border-radius:9px; font:inherit; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap; }
+.chart-view-tabs button:hover { color:#0f172a; background:#e2e8f0; }
+.chart-view-tabs button.active { color:#0f172a; background:#fff; box-shadow:0 1px 3px rgba(15,23,42,.12); }
+.cashflow-legend { display:flex; gap:16px; flex-wrap:wrap; align-items:center; padding:2px 2px 8px; color:#64748b; font-size:12px; font-weight:700; }
+.cashflow-legend span { display:inline-flex; align-items:center; gap:7px; }
+.cashflow-legend span::before { content:""; width:9px; height:9px; border-radius:3px; background:currentColor; }
+.cashflow-legend .income { color:#10b981; }
+.cashflow-legend .expenses { color:#f97316; }
+.cashflow-legend .savings { color:#2563eb; }
+.cashflow-legend .invested { color:#8b5cf6; }
+.cashflow-legend .after { color:#0891b2; }
+.cashflow-chart-wrap { height:390px; }
+.cashflow-tooltip { min-width:220px; padding:12px 14px; border:1px solid #dbe3ef; border-radius:12px; background:rgba(255,255,255,.98); box-shadow:0 12px 30px rgba(15,23,42,.12); }
+.cashflow-tooltip > strong { display:block; margin-bottom:8px; color:#0f172a; font-size:13px; }
+.cashflow-tooltip div { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:4px 0; color:#64748b; font-size:12px; }
+.cashflow-tooltip div b { color:#0f172a; font-variant-numeric:tabular-nums; }
+@media (max-width:900px) {
+  .cashflow-controls { justify-content:flex-start; width:100%; }
+  .cashflow-chart-wrap { height:340px; }
+}
