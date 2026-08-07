@@ -28,7 +28,6 @@ export const demoTransactions = [
 export const demoAssets = [
   { id: "asset-1", type: "deposit", name: "Terminuotas indėlis", institution: "SEB", owner: "Evaldas", amount: 5000, interestRate: 2.8, startDate: "2026-04-15", endDate: "2027-04-15", valueDate: "2026-04-30", notes: "12 mėn. terminuotas indėlis" },
   { id: "asset-2", type: "deposit", name: "Taupomasis indėlis", institution: "Swedbank", owner: "Rima", amount: 3200, interestRate: 2.1, startDate: "2026-06-01", endDate: "2027-06-01", valueDate: "2026-06-30", notes: "Šeimos rezervas" },
-  { id: "asset-3", type: "cash", name: "Grynieji namuose", institution: "Namai", owner: "Šeima", amount: 800, interestRate: 0, startDate: "2026-01-01", endDate: "", valueDate: "2026-01-31", notes: "Kasdienis rezervas" },
 ];
 
 export const categories = ["Atlyginimas", "Alkoholis", "Atostogos", "Auto/Transportas", "Buitis", "Drabužiai", "Dovanos", "Gyvūnai", "Grožis", "Higiena", "Maistas", "Medicina", "Mokesčiai", "Pramogos", "Vaikas", "Evaldo asmeninės", "Rimos asmeninės", "Kita"];

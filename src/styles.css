@@ -964,3 +964,24 @@ input,select { transition:border-color .16s ease,box-shadow .16s ease,background
 .metric-card.tone-after-investment { border-bottom-color:#0891b2; }
 .metric-card.tone-after-investment .metric-icon { color:#0e7490; background:#cffafe; }
 .analytics-trend-card .recharts-legend-wrapper { font-size:12px; }
+
+/* V2.4 · Grynasis turtas */
+.networth-hero{display:flex;justify-content:space-between;align-items:center;gap:28px;padding:30px 32px;margin-bottom:18px;border-radius:24px;color:#fff;background:linear-gradient(120deg,#0f172a,#164e63 58%,#0e7490);box-shadow:0 18px 45px rgba(15,23,42,.18)}
+.networth-hero>div:first-child{display:flex;flex-direction:column;gap:8px}.networth-hero strong{font-size:46px;line-height:1;font-weight:850}.networth-hero .positive{color:#86efac}.networth-hero .negative{color:#fdba74}.networth-formula{display:grid;grid-template-columns:auto auto;gap:8px 24px;min-width:290px;padding:20px 24px;border:1px solid rgba(255,255,255,.16);border-radius:18px;background:rgba(255,255,255,.08)}.networth-formula span{color:#cbd5e1}.networth-formula b{text-align:right;font-size:18px}.networth-charts{grid-template-columns:minmax(0,1.55fr) minmax(320px,.8fr)}.networth-explainer{display:flex;justify-content:space-between;align-items:center;gap:24px}.networth-equation{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px}.networth-equation span{padding:10px 13px;border-radius:12px;background:#f1f5f9;font-weight:700}.networth-equation i{font-style:normal;color:#64748b;font-weight:800}.networth-equation strong{font-size:22px;color:#0f766e}
+@media(max-width:900px){.networth-hero,.networth-explainer{align-items:flex-start;flex-direction:column}.networth-formula{width:100%;min-width:0}.networth-charts{grid-template-columns:1fr}}
+
+/* V2.4.1 · tikrais mėnesio įrašais paremta Net Worth istorija */
+.networth-empty{height:100%;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;color:#64748b;padding:28px}.networth-empty strong{font-size:18px;color:#0f172a}.networth-empty span{max-width:470px;line-height:1.55}.networth-empty .secondary-button{margin-top:6px}.networth-history-card{margin-top:18px}.networth-history-card .card-header{margin-bottom:14px}.networth-modal-total{display:flex;justify-content:space-between;align-items:center;margin:4px 0 16px;padding:16px 18px;border-radius:15px;background:#eef6ff;border:1px solid #cfe4fb}.networth-modal-total span{font-weight:700;color:#486078}.networth-modal-total strong{font-size:24px;color:#0f766e}.networth-modal .modal-description{margin-top:-4px}
+
+/* V2.4.2 · Indėlių modulis */
+.metrics-grid.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.asset-filter-row.single-filter { grid-template-columns: minmax(0, 320px); }
+@media (max-width: 1250px) { .metrics-grid.five { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+@media (max-width: 760px) { .metrics-grid.five { grid-template-columns: 1fr; } }
+
+/* Investments V2.5.1 */
+.investment-history-chart-card { margin-bottom: 18px; }
+.investment-history-chart { height: 440px; margin-top: 10px; }
+@media (max-width: 760px) {
+  .investment-history-chart { height: 340px; }
+}
