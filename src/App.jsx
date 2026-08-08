@@ -123,14 +123,21 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
 
   const trendData = useMemo(() => {
     if (periodMode === "year") return yearlyData;
-    const grouped = {};
-    periodTransactions.filter((i) => i.type === "income" || i.type === "expense").forEach((i) => {
-      const day = i.date.slice(8, 10);
-      if (!grouped[day]) grouped[day] = { day, income: 0, expenses: 0 };
-      grouped[day][i.type === "income" ? "income" : "expenses"] += Number(i.amount);
+    const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+    const previousDate = new Date(selectedYear, selectedMonth, 0);
+    const previousKey = `${previousDate.getFullYear()}-${String(previousDate.getMonth() + 1).padStart(2, "0")}`;
+    const previousRows = transactions.filter((item) => ym(item.date) === previousKey);
+    let income = 0, expenses = 0, previousExpenses = 0;
+    return Array.from({ length: daysInMonth }, (_, index) => {
+      const dayNumber = index + 1;
+      periodTransactions.filter((i) => Number(i.date.slice(8, 10)) === dayNumber).forEach((i) => {
+        if (i.type === "income") income += Number(i.amount);
+        if (i.type === "expense") expenses += Number(i.amount);
+      });
+      previousRows.filter((i) => Number(i.date.slice(8, 10)) === dayNumber && i.type === "expense").forEach((i) => previousExpenses += Number(i.amount));
+      return { day: String(dayNumber).padStart(2, "0"), income, expenses, previousExpenses };
     });
-    return Object.values(grouped).sort((a, b) => a.day.localeCompare(b.day));
-  }, [periodTransactions, periodMode, yearlyData]);
+  }, [periodTransactions, periodMode, yearlyData, transactions, selectedYear, selectedMonth]);
 
   const assetSummary = useMemo(() => {
     const deposits = assets.filter((item) => item.type === "deposit");
@@ -192,6 +199,11 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
         total: row.evaldas == null && row.rima == null ? legacyTotal : evaldas + rima
       };
     }), [investmentHistoryRows, selectedYear]);
+
+  const latestInvestmentSnapshotForDefaults = useMemo(() => {
+    if (!investmentHistoryRows.length) return null;
+    return [...investmentHistoryRows].sort((a, b) => String(a.monthKey || "").localeCompare(String(b.monthKey || ""))).slice(-1)[0] || null;
+  }, [investmentHistoryRows]);
 
   const assetHistory = useMemo(() => MONTHS.map((month, index) => {
     const cutoff = `${selectedYear}-${String(index + 1).padStart(2, "0")}-31`;
@@ -294,17 +306,7 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
     return { netWorth, positiveAccounts, deposits, investments, otherAssets, liabilities, history, breakdown };
   }, [accountRows, assets, netWorthHistory, selectedYear]);
 
-  const personalBudgets = useMemo(() => ["Evaldas", "Rima"].map((owner) => {
-    const wallet = accountRows.find((account) => account.owner === owner && account.type === "cash" && account.name.includes("piniginė"));
-    const assigned = transactions
-      .filter((transaction) => transaction.type === "transfer" && transaction.personalBudget && ym(transaction.date) === periodKey && transaction.personalBudgetOwner === owner)
-      .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
-    const spent = wallet
-      ? transactions.filter((transaction) => transaction.type === "expense" && ym(transaction.date) === periodKey && (transaction.accountId || transaction.account) === wallet.id)
-        .reduce((sum, transaction) => sum + Number(transaction.amount), 0)
-      : 0;
-    return { owner, assigned, spent, remaining: assigned - spent, walletBalance: wallet?.balance || 0 };
-  }), [transactions, accountRows, periodKey]);
+
 
   async function persistState(patch) {
     const payload = {
@@ -365,7 +367,9 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
     const normalized = {
       ...item,
       evaldas: Number(item.evaldas || 0),
-      rima: Number(item.rima || 0)
+      rima: Number(item.rima || 0),
+      evaldasContributed: item.evaldasContributed === "" || item.evaldasContributed == null ? null : Number(item.evaldasContributed),
+      rimaContributed: item.rimaContributed === "" || item.rimaContributed == null ? null : Number(item.rimaContributed)
     };
     normalized.total = normalized.evaldas + normalized.rima;
     delete normalized.value;
@@ -637,7 +641,6 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
             assetSummary={assetSummary}
             budgetSummary={budgetSummary}
             accountSummary={accountSummary}
-            personalBudgets={personalBudgets}
             onNew={openNewTransaction}
             onAssets={() => setActivePage("assets")}
             onTransactions={() => setActivePage("transactions")}
@@ -677,7 +680,6 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
           <FinancialAccounts
             accounts={accountRows}
             summary={accountSummary}
-            personalBudgets={personalBudgets}
             onNew={() => { setEditingAccount(null); setAccountOpen(true); }}
             onEdit={(account) => { setEditingAccount(account); setAccountOpen(true); }}
             onDelete={deleteFinancialAccount}
@@ -793,7 +795,7 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
       {investmentSnapshotOpen && (
         <InvestmentSnapshotModal
           initial={editingInvestmentSnapshot}
-          defaults={{ monthKey: `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}`, evaldas: 0, rima: 0 }}
+          defaults={{ monthKey: `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}`, evaldas: 0, rima: 0, evaldasContributed: latestInvestmentSnapshotForDefaults?.evaldasContributed ?? "", rimaContributed: latestInvestmentSnapshotForDefaults?.rimaContributed ?? "" }}
           onClose={() => { setInvestmentSnapshotOpen(false); setEditingInvestmentSnapshot(null); }}
           onSubmit={submitInvestmentSnapshot}
         />
@@ -834,7 +836,7 @@ function PeriodBar({ mode, setMode, year, setYear, month, setMonth, shiftMonth }
   );
 }
 
-function Overview({ totals, periodMode, year, month, trendData, categoryData, rows, yearlyData, assetSummary, budgetSummary, accountSummary, personalBudgets, onNew, onAssets, onTransactions, onBudgets, onAccounts }) {
+function Overview({ totals, periodMode, year, month, trendData, categoryData, rows, yearlyData, assetSummary, budgetSummary, accountSummary, onNew, onAssets, onTransactions, onBudgets, onAccounts }) {
   const title = periodMode === "year" ? `${year} metų apžvalga` : `${year} m. ${MONTHS[month].toLowerCase()}`;
   return (
     <>
@@ -879,34 +881,20 @@ function Overview({ totals, periodMode, year, month, trendData, categoryData, ro
       )}
 
 
-      <section className="personal-budget-grid">
-        {personalBudgets.map((budget) => (
-          <article className="card personal-budget-card" key={budget.owner}>
-            <div>
-              <p className="card-kicker">Asmeninis biudžetas</p>
-              <h2>{budget.owner}</h2>
-            </div>
-            <div className="personal-budget-values">
-              <span>Skirta <strong>{money(budget.assigned)}</strong></span>
-              <span>Išleista <strong>{money(budget.spent)}</strong></span>
-              <span>Liko <strong>{money(budget.remaining)}</strong></span>
-              <span>Piniginėje <strong>{money(budget.walletBalance)}</strong></span>
-            </div>
-          </article>
-        ))}
-      </section>
 
       <section className="dashboard-grid">
-        <ChartCard title={periodMode === "year" ? "Metų pajamos ir išlaidos" : "Mėnesio dinamika"}>
+        <ChartCard title={periodMode === "year" ? "Metų pajamos ir išlaidos" : "Sukauptos mėnesio pajamos ir išlaidos"}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false}/>
-              <XAxis dataKey={periodMode === "year" ? "month" : "day"}/>
-              <YAxis/>
-              <Tooltip formatter={money}/>
-              <Area type="monotone" dataKey="income" stroke="#10b981" fill="#d1fae5" strokeWidth={3}/>
-              <Area type="monotone" dataKey="expenses" stroke="#f97316" fill="#ffedd5" strokeWidth={3}/>
-            </AreaChart>
+            {periodMode === "year" ? <AreaChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="month"/><YAxis/><Tooltip formatter={money}/>
+              <Area type="monotone" dataKey="income" name="Pajamos" stroke="#10b981" fill="#d1fae5" strokeWidth={3}/>
+              <Area type="monotone" dataKey="expenses" name="Išlaidos" stroke="#f97316" fill="#ffedd5" strokeWidth={3}/>
+            </AreaChart> : <LineChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="day"/><YAxis/><Tooltip formatter={money}/><Legend/>
+              <Line type="monotone" dataKey="income" name="Pajamos" stroke="#10b981" strokeWidth={3} dot={false}/>
+              <Line type="monotone" dataKey="expenses" name="Išlaidos" stroke="#f97316" strokeWidth={3} dot={false}/>
+              <Line type="monotone" dataKey="previousExpenses" name="Praėjusio mėn. išlaidos" stroke="#94a3b8" strokeWidth={2} strokeDasharray="6 5" dot={false}/>
+            </LineChart>}
           </ResponsiveContainer>
         </ChartCard>
 
@@ -1126,6 +1114,19 @@ function AnalyticsCenter({ transactions, periodMode, year, month, periodRows, to
   const categoriesWithActivity = monthlyCategoryRows.filter((item) => item.value || item.previousValue);
   const biggestIncrease = categoriesWithActivity.slice().sort((a, b) => b.difference - a.difference)[0];
   const biggestDecrease = categoriesWithActivity.slice().sort((a, b) => a.difference - b.difference)[0];
+  const [trendCategory, setTrendCategory] = useState("Maistas");
+  const categoryTrend12m = useMemo(() => {
+    const end = new Date(year, month, 1);
+    return Array.from({ length: 12 }, (_, idx) => {
+      const d = new Date(end.getFullYear(), end.getMonth() - (11 - idx), 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const value = transactions.filter((item) => item.type === "expense" && item.category === trendCategory && ym(item.date) === key).reduce((sum, item) => sum + Number(item.amount), 0);
+      return { label: `${MONTHS[d.getMonth()].slice(0,3)} ${String(d.getFullYear()).slice(2)}`, value };
+    });
+  }, [transactions, trendCategory, year, month]);
+  const activeTrendValues = categoryTrend12m.filter((row) => row.value > 0);
+  const trendAverage = activeTrendValues.length ? activeTrendValues.reduce((sum,row)=>sum+row.value,0) / activeTrendValues.length : 0;
+
   const title = periodMode === "year" ? `${year} metų analizė` : `${year} m. ${MONTHS[month].toLowerCase()} analizė`;
   const comparisonLabel = periodMode === "year" ? "palyginti su ankstesniais metais" : "palyginti su ankstesniu mėnesiu";
   const leadingCategory = categoryData[0];
@@ -1229,6 +1230,11 @@ function AnalyticsCenter({ transactions, periodMode, year, month, periodRows, to
             </>
           ) : <div className="empty-state">Pasirinktam laikotarpiui išlaidų nėra.</div>}
         </article>
+      </section>
+
+      <section className="card category-trend-card">
+        <div className="card-header chart-filter-header"><div><p className="card-kicker">12 mėnesių tendencija</p><h2>Kategorijos išlaidų istorija</h2></div><div className="category-trend-controls"><select value={trendCategory} onChange={(e)=>setTrendCategory(e.target.value)}>{EXPENSE_CATEGORIES.map((category)=><option key={category} value={category}>{category}</option>)}</select><span>Aktyvių mėn. vidurkis <strong>{money(trendAverage)}</strong></span></div></div>
+        <div className="category-trend-chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={categoryTrend12m}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="label"/><YAxis/><Tooltip formatter={money}/><Bar dataKey="value" name={trendCategory} fill="#2563eb" radius={[7,7,0,0]}/></BarChart></ResponsiveContainer></div>
       </section>
 
       <section className="card analytics-comparison-card">
@@ -1664,43 +1670,56 @@ function Investments({ data, history, snapshots, transactions, year, month, peri
   const latestEvaldas = Number(latest?.evaldas || 0);
   const latestRima = Number(latest?.rima || 0);
   const latestTotal = latest?.evaldas == null && latest?.rima == null ? Number(latest?.value || 0) : latestEvaldas + latestRima;
+  const hasContributionData = latest && latest.evaldasContributed != null && latest.rimaContributed != null;
+  const contributedCapital = hasContributionData ? Number(latest.evaldasContributed || 0) + Number(latest.rimaContributed || 0) : null;
+  const investmentResult = contributedCapital == null ? null : latestTotal - contributedCapital;
+  const investmentResultPct = contributedCapital > 0 ? investmentResult / contributedCapital * 100 : null;
   const investmentChartAll = sortedSnapshots.map((row) => {
     const evaldas = Number(row.evaldas || 0);
     const rima = Number(row.rima || 0);
     const total = row.evaldas == null && row.rima == null ? Number(row.value || 0) : evaldas + rima;
     const [y, m] = String(row.monthKey || "").split("-");
-    return { ...row, label: `${MONTHS[Number(m)-1]?.slice(0,3) || m} ${String(y).slice(2)}`, evaldas, rima, total };
+    const hasContributed = row.evaldasContributed != null && row.rimaContributed != null;
+    const contributedTotal = hasContributed ? Number(row.evaldasContributed || 0) + Number(row.rimaContributed || 0) : null;
+    return { ...row, label: `${MONTHS[Number(m)-1]?.slice(0,3) || m} ${String(y).slice(2)}`, evaldas, rima, total, contributedTotal };
   });
   const rangeCount = chartRange === "3m" ? 3 : chartRange === "6m" ? 6 : chartRange === "12m" ? 12 : null;
   const investmentChartData = rangeCount ? investmentChartAll.slice(-rangeCount) : investmentChartAll;
 
   return <>
     <header className="topbar">
-      <div><p className="eyebrow">Investicijų modulis V2.5.3</p><h1>Šeimos investicijos</h1><p className="subtitle">Evaldo ir Rimos portfelio vertė bei faktinė mėnesio pabaigos istorija.</p></div>
+      <div><p className="eyebrow">Investicijų modulis V2.6.1</p><h1>Šeimos investicijos</h1><p className="subtitle">Evaldo ir Rimos portfelio vertė bei faktinė mėnesio pabaigos istorija.</p></div>
       <div className="topbar-actions"><button className="secondary-button" onClick={onNewOperation}><Plus size={18}/>Investavimo operacija</button><button className="primary-button" onClick={onNewSnapshot}><Plus size={18}/>Mėnesio vertė</button></div>
     </header>
 
-    <section className="metrics-grid four">
+    <section className="metrics-grid six investment-kpis">
       <Metric tone="saving" label="Bendra portfelio vertė" value={money(latestTotal)} helper={latest ? `Pagal ${latest.monthKey} įrašą` : "Istorinių įrašų nėra"} icon={<PiggyBank/>}/>
       <Metric label="Evaldas" value={money(latestEvaldas)} helper={latestTotal ? `${(latestEvaldas / latestTotal * 100).toFixed(1)} % portfelio` : "Nėra duomenų"} icon={<WalletCards/>}/>
       <Metric label="Rima" value={money(latestRima)} helper={latestTotal ? `${(latestRima / latestTotal * 100).toFixed(1)} % portfelio` : "Nėra duomenų"} icon={<WalletCards/>}/>
       <Metric label="Investuota laikotarpiu" value={money(investedInPeriod)} helper={`${investmentOperations.length} operacijos`} icon={<ArrowUpRight/>}/>
+      <Metric tone="investment" label="Įneštas kapitalas" value={contributedCapital == null ? "—" : money(contributedCapital)} helper={contributedCapital == null ? "Įveskite kartu su mėnesio verte" : "Grynasis įneštas kapitalas iki mėnesio pabaigos"} icon={<ArrowUpRight/>}/>
+      <Metric tone="saving" label="Investicijų rezultatas" value={investmentResult == null ? "—" : money(investmentResult)} helper={investmentResultPct == null ? (contributedCapital == null ? "Trūksta įnešto kapitalo" : "Rezultatas nuo įnešto kapitalo") : `${investmentResultPct >= 0 ? "+" : ""}${investmentResultPct.toFixed(1)} % nuo įnešto kapitalo`} icon={<PiggyBank/>}/>
     </section>
 
     <section className="card investment-history-chart-card">
       <div className="card-header chart-filter-header"><div><p className="card-kicker">MĖNESIO PABAIGOS VERTĖS</p><h2>Investicijų dinamika</h2></div><div className="chart-header-actions"><div className="chart-range-tabs" aria-label="Investicijų grafiko laikotarpis">{[["3m","3 mėn."],["6m","6 mėn."],["12m","1 m."],["all","Visi"]].map(([key,label])=><button key={key} className={chartRange===key?"active":""} onClick={()=>setChartRange(key)}>{label}</button>)}</div><button className="secondary-button" onClick={onNewSnapshot}><Plus size={16}/> Naujas įrašas</button></div></div>
       <div className="investment-history-chart">
-        {investmentChartData.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={investmentChartData} margin={{top:16,right:18,left:4,bottom:4}}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="label"/><YAxis/><Tooltip formatter={money}/><Legend/><Line type="monotone" dataKey="evaldas" name="Evaldas" stroke="#2563eb" strokeWidth={3} dot={{r:4}} activeDot={{r:6}}/><Line type="monotone" dataKey="rima" name="Rima" stroke="#a21caf" strokeWidth={3} dot={{r:4}} activeDot={{r:6}}/><Line type="monotone" dataKey="total" name="Bendra vertė" stroke="#0891b2" strokeWidth={4} dot={{r:4}} activeDot={{r:7}}/></LineChart></ResponsiveContainer> : <div className="networth-empty"><PiggyBank size={34}/><strong>Istorinių investicijų duomenų dar nėra</strong><span>Įrašykite Evaldo ir Rimos portfelio vertes. Bendra suma bus apskaičiuota automatiškai.</span><button className="secondary-button" onClick={onNewSnapshot}><Plus size={16}/> Pridėti pirmą įrašą</button></div>}
+        {investmentChartData.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={investmentChartData} margin={{top:16,right:18,left:4,bottom:4}}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="label"/><YAxis/><Tooltip formatter={money}/><Legend/><Line type="monotone" dataKey="evaldas" name="Evaldas" stroke="#2563eb" strokeWidth={3} dot={{r:4}} activeDot={{r:6}}/><Line type="monotone" dataKey="rima" name="Rima" stroke="#a21caf" strokeWidth={3} dot={{r:4}} activeDot={{r:6}}/><Line type="monotone" dataKey="total" name="Bendra vertė" stroke="#0891b2" strokeWidth={4} dot={{r:4}} activeDot={{r:7}}/><Line type="monotone" dataKey="contributedTotal" name="Įneštas kapitalas" stroke="#64748b" strokeWidth={2.5} strokeDasharray="7 5" dot={{r:3}} connectNulls={false}/></LineChart></ResponsiveContainer> : <div className="networth-empty"><PiggyBank size={34}/><strong>Istorinių investicijų duomenų dar nėra</strong><span>Įrašykite Evaldo ir Rimos portfelio vertes. Bendra suma bus apskaičiuota automatiškai.</span><button className="secondary-button" onClick={onNewSnapshot}><Plus size={16}/> Pridėti pirmą įrašą</button></div>}
       </div>
     </section>
 
     <section className="card networth-history-card">
       <div className="card-header"><div><p className="card-kicker">MĖNESIO PABAIGOS ĮRAŠAI</p><h2>{year} m. investicijų istorija</h2></div></div>
-      {snapshots.filter((row) => String(row.monthKey || "").startsWith(String(year))).length ? <div className="table-scroll"><table className="operations-table"><thead><tr><th>Mėnuo</th><th>Evaldas</th><th>Rima</th><th>Bendra vertė</th><th>Veiksmai</th></tr></thead><tbody>{[...snapshots].filter((row) => String(row.monthKey || "").startsWith(String(year))).sort((a,b)=>b.monthKey.localeCompare(a.monthKey)).map((row)=>{
+      {snapshots.filter((row) => String(row.monthKey || "").startsWith(String(year))).length ? <div className="table-scroll"><table className="operations-table"><thead><tr><th>Mėnuo</th><th>Evaldo vertė</th><th>Evaldo kapitalas</th><th>Rimos vertė</th><th>Rimos kapitalas</th><th>Bendra vertė</th><th>Rezultatas</th><th>Veiksmai</th></tr></thead><tbody>{[...snapshots].filter((row) => String(row.monthKey || "").startsWith(String(year))).sort((a,b)=>b.monthKey.localeCompare(a.monthKey)).map((row)=>{
         const evaldas = Number(row.evaldas || 0);
         const rima = Number(row.rima || 0);
         const total = row.evaldas == null && row.rima == null ? Number(row.value || 0) : evaldas + rima;
-        return <tr key={row.id}><td><strong>{MONTHS[Number(row.monthKey.slice(5,7))-1]} {row.monthKey.slice(0,4)}</strong></td><td className="money-cell">{money(evaldas)}</td><td className="money-cell">{money(rima)}</td><td className="money-cell"><strong>{money(total)}</strong></td><td><div className="row-actions"><button title="Redaguoti" onClick={()=>onEditSnapshot(row)}><Pencil size={16}/></button><button className="danger" title="Ištrinti" onClick={()=>onDeleteSnapshot(row)}><Trash2 size={16}/></button></div></td></tr>;
+        const hasContributed = row.evaldasContributed != null && row.rimaContributed != null;
+        const evaldasContributed = hasContributed ? Number(row.evaldasContributed || 0) : null;
+        const rimaContributed = hasContributed ? Number(row.rimaContributed || 0) : null;
+        const contributed = hasContributed ? evaldasContributed + rimaContributed : null;
+        const result = contributed == null ? null : total - contributed;
+        return <tr key={row.id}><td><strong>{MONTHS[Number(row.monthKey.slice(5,7))-1]} {row.monthKey.slice(0,4)}</strong></td><td className="money-cell">{money(evaldas)}</td><td className="money-cell">{evaldasContributed == null ? "—" : money(evaldasContributed)}</td><td className="money-cell">{money(rima)}</td><td className="money-cell">{rimaContributed == null ? "—" : money(rimaContributed)}</td><td className="money-cell"><strong>{money(total)}</strong></td><td className={`money-cell ${result == null ? "" : result >= 0 ? "positive-value" : "negative-value"}`}>{result == null ? "—" : money(result)}</td><td><div className="row-actions"><button title="Redaguoti" onClick={()=>onEditSnapshot(row)}><Pencil size={16}/></button><button className="danger" title="Ištrinti" onClick={()=>onDeleteSnapshot(row)}><Trash2 size={16}/></button></div></td></tr>;
       })}</tbody></table></div> : <div className="empty-state">Šiems metams investicijų vertės įrašų dar nėra.</div>}
     </section>
 
@@ -1725,6 +1744,11 @@ function NetWorth({ data, year, snapshots, onNewSnapshot, onEditSnapshot, onDele
   const latestValue = snapshotValue(latestSaved);
   const previousValue = snapshotValue(previousSaved);
   const change = latestValue !== null && previousValue !== null ? latestValue - previousValue : null;
+  const yearHistoryAsc = allHistory.filter((row) => row.monthKey.startsWith(String(year)));
+  const yearStartValue = snapshotValue(yearHistoryAsc[0]);
+  const yearLatestValue = snapshotValue(yearHistoryAsc[yearHistoryAsc.length - 1]);
+  const ytdChange = yearStartValue !== null && yearLatestValue !== null ? yearLatestValue - yearStartValue : null;
+  const ytdPct = yearStartValue ? ytdChange / yearStartValue * 100 : null;
   const yearRows = allHistory.filter((row) => row.monthKey.startsWith(String(year))).reverse();
   const netWorthChartAll = allHistory.map((row) => {
     const [y, m] = String(row.monthKey || "").split("-");
@@ -1734,13 +1758,20 @@ function NetWorth({ data, year, snapshots, onNewSnapshot, onEditSnapshot, onDele
   const netWorthChartData = rangeCount ? netWorthChartAll.slice(-rangeCount) : netWorthChartAll;
   return <>
     <header className="topbar">
-      <div><p className="eyebrow">V2.4.2 · Indėliai ir Net Worth</p><h1>Grynasis turtas</h1><p className="subtitle">Dabartinė turto vertė ir tikrais mėnesio pabaigos įrašais paremta istorija.</p></div>
-      <button className="primary-button" onClick={onNewSnapshot}><Plus size={18}/> Pridėti mėnesio įrašą</button>
+      <div><p className="eyebrow">V2.6 · Net Worth Intelligence</p><h1>Grynasis turtas</h1><p className="subtitle">Dabartinė turto vertė ir tikrais mėnesio pabaigos įrašais paremta istorija.</p></div>
+      <button className="primary-button" onClick={onNewSnapshot}><Plus size={18}/> Užfiksuoti mėnesį</button>
     </header>
 
     <section className="networth-hero">
       <div><p className="card-kicker">BENDRA GRYNOJI VERTĖ ŠIANDIEN</p><strong>{money(data.netWorth)}</strong>{change === null ? <span>Istorinis pokytis bus rodomas sukaupus bent 2 mėnesius.</span> : <span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "▲" : "▼"} {money(Math.abs(change))} tarp paskutinių įrašų</span>}</div>
       <div className="networth-formula"><span>Turtas</span><b>{money(data.positiveAccounts + data.deposits + data.investments + data.otherAssets)}</b><span>Įsipareigojimai</span><b>− {money(data.liabilities)}</b></div>
+    </section>
+
+    <section className="networth-change-strip">
+      <div><span>Paskutinio mėnesio pokytis</span><strong className={change == null ? "" : change >= 0 ? "positive" : "negative"}>{change == null ? "—" : `${change >= 0 ? "+" : "−"}${money(Math.abs(change))}`}</strong></div>
+      <div><span>{year} YTD pokytis</span><strong className={ytdChange == null ? "" : ytdChange >= 0 ? "positive" : "negative"}>{ytdChange == null ? "—" : `${ytdChange >= 0 ? "+" : "−"}${money(Math.abs(ytdChange))}`}</strong></div>
+      <div><span>{year} YTD</span><strong className={ytdPct == null ? "" : ytdPct >= 0 ? "positive" : "negative"}>{ytdPct == null ? "—" : `${ytdPct >= 0 ? "+" : ""}${ytdPct.toFixed(1)} %`}</strong></div>
+      <div><span>Istorijos įrašų</span><strong>{allHistory.length}</strong></div>
     </section>
 
     <section className="metrics-grid five">
@@ -1762,7 +1793,7 @@ function NetWorth({ data, year, snapshots, onNewSnapshot, onEditSnapshot, onDele
     </section>
 
     <section className="card networth-history-card">
-      <div className="card-header"><div><p className="card-kicker">MĖNESIO PABAIGOS ĮRAŠAI</p><h2>{year} m. grynojo turto istorija</h2></div><button className="secondary-button" onClick={onNewSnapshot}><Plus size={16}/> Naujas įrašas</button></div>
+      <div className="card-header"><div><p className="card-kicker">MĖNESIO PABAIGOS ĮRAŠAI</p><h2>{year} m. grynojo turto istorija</h2></div><button className="secondary-button" onClick={onNewSnapshot}><Plus size={16}/> Užfiksuoti mėnesį</button></div>
       {yearRows.length ? <div className="table-scroll"><table className="operations-table"><thead><tr><th>Mėnuo</th><th>Finansinės paskyros</th><th>Indėliai</th><th>Investicijos</th><th>Kitas turtas</th><th>Įsipareigojimai</th><th>Grynasis turtas</th><th>Veiksmai</th></tr></thead><tbody>{yearRows.map((row) => { const deposits = Number(row.deposits ?? row.otherAssets ?? 0); const otherAssets = row.deposits == null ? 0 : Number(row.otherAssets || 0); const value = Number(row.financialAccounts || 0) + deposits + Number(row.investments || 0) + otherAssets - Number(row.liabilities || 0); return <tr key={row.id}><td><strong>{MONTHS[Number(row.monthKey.slice(5,7))-1]} {row.monthKey.slice(0,4)}</strong></td><td>{money(row.financialAccounts)}</td><td>{money(deposits)}</td><td>{money(row.investments)}</td><td>{money(otherAssets)}</td><td>{money(row.liabilities)}</td><td className="money-cell"><strong>{money(value)}</strong></td><td><div className="row-actions"><button title="Redaguoti" onClick={() => onEditSnapshot(row)}><Pencil size={16}/></button><button className="danger" title="Ištrinti" onClick={() => onDeleteSnapshot(row)}><Trash2 size={16}/></button></div></td></tr>; })}</tbody></table></div> : <div className="empty-state">Šiems metams mėnesio pabaigos įrašų dar nėra.</div>}
     </section>
 
@@ -1771,7 +1802,7 @@ function NetWorth({ data, year, snapshots, onNewSnapshot, onEditSnapshot, onDele
 }
 
 
-function FinancialAccounts({ accounts, summary, personalBudgets, onNew, onEdit, onDelete }) {
+function FinancialAccounts({ accounts, summary, onNew, onEdit, onDelete }) {
   const groups = ["Evaldas", "Rima", "Šeima"];
   return <>
     <header className="topbar">
@@ -1782,17 +1813,6 @@ function FinancialAccounts({ accounts, summary, personalBudgets, onNew, onEdit, 
       <Metric label="Bendras likutis" value={money(summary.total)} helper="Įtrauktos į Net Worth" icon={<WalletCards/>}/>
       <Metric label="Grynieji" value={money(summary.cash)} helper="Namai ir piniginės" icon={<PiggyBank/>}/>
       <Metric label="Kreditinės kortelės" value={money(summary.credit)} helper="Dabartinis balansas" icon={<ArrowRightLeft/>}/>
-    </section>
-    <section className="personal-budget-grid">
-      {personalBudgets.map((budget) => <article className="card personal-budget-card" key={budget.owner}>
-        <div><p className="card-kicker">Asmeninis biudžetas</p><h2>{budget.owner}</h2></div>
-        <div className="personal-budget-values">
-          <span>Skirta <strong>{money(budget.assigned)}</strong></span>
-          <span>Išleista <strong>{money(budget.spent)}</strong></span>
-          <span>Liko <strong>{money(budget.remaining)}</strong></span>
-          <span>Piniginėje <strong>{money(budget.walletBalance)}</strong></span>
-        </div>
-      </article>)}
     </section>
     {groups.map((owner) => {
       const rows = accounts.filter((account) => account.owner === owner);
@@ -1868,15 +1888,11 @@ function TransactionModal({ initial, initialDate, assets, financialAccounts, onC
     investmentAssetId: investmentAssets[0]?.id || "",
     description: "",
     notes: "",
-    amount: "",
-    personalBudget: false,
-    personalBudgetOwner: ""
+    amount: ""
   });
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const isTransfer = form.type === "transfer";
   const isInvestment = form.type === "investment";
-  const selectedTarget = activeAccounts.find((account) => account.id === form.toAccountId);
-  const canAssignPersonalBudget = isTransfer && selectedTarget?.type === "cash" && selectedTarget?.name.includes("piniginė");
 
   function submit(event) {
     event.preventDefault();
@@ -1892,17 +1908,13 @@ function TransactionModal({ initial, initialDate, assets, financialAccounts, onC
       category: "Perkėlimas",
       account: "",
       fromAccount: from?.name || "",
-      toAccount: to?.name || "",
-      personalBudget: canAssignPersonalBudget ? form.personalBudget : false,
-      personalBudgetOwner: canAssignPersonalBudget && form.personalBudget ? selectedTarget.owner : ""
+      toAccount: to?.name || ""
     } : isInvestment ? {
       ...form,
       category: "Investavimas",
       account: account?.name || "",
       investmentName: investment?.name || "",
-      investmentInstitution: investment?.institution || "",
-      personalBudget: false,
-      personalBudgetOwner: ""
+      investmentInstitution: investment?.institution || ""
     } : {
       ...form,
       account: account?.name || ""
@@ -1925,7 +1937,6 @@ function TransactionModal({ initial, initialDate, assets, financialAccounts, onC
         <label>Iš<select value={form.fromAccountId || ""} onChange={(e)=>set("fromAccountId",e.target.value)}>{activeAccounts.map((account)=><option key={account.id} value={account.id}>{account.name} · {account.owner}</option>)}</select></label>
         <label>Į<select value={form.toAccountId || ""} onChange={(e)=>set("toAccountId",e.target.value)}>{activeAccounts.map((account)=><option key={account.id} value={account.id}>{account.name} · {account.owner}</option>)}</select></label>
       </div>
-      {canAssignPersonalBudget && <label className="checkbox-label"><input type="checkbox" checked={Boolean(form.personalBudget)} onChange={(e)=>set("personalBudget",e.target.checked)}/><span>Priskirti {selectedTarget.owner} asmeniniam biudžetui</span></label>}
       <div className="transfer-note"><ArrowRightLeft size={17}/><span>Perkėlimas nekeičia šeimos pajamų ar išlaidų, bet pakeičia abiejų paskyrų likučius.</span></div>
     </> : isInvestment ? <>
       <div className="form-grid">
@@ -1950,17 +1961,25 @@ function InvestmentSnapshotModal({ initial, defaults, onClose, onSubmit }) {
   const normalizedInitial = initial ? {
     ...initial,
     evaldas: initial.evaldas ?? (initial.rima == null ? initial.value ?? 0 : 0),
-    rima: initial.rima ?? 0
+    rima: initial.rima ?? 0,
+    evaldasContributed: initial.evaldasContributed ?? "",
+    rimaContributed: initial.rimaContributed ?? ""
   } : defaults;
   const [form, setForm] = useState(normalizedInitial);
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const total = Number(form.evaldas || 0) + Number(form.rima || 0);
+  const hasContribution = form.evaldasContributed !== "" && form.evaldasContributed != null && form.rimaContributed !== "" && form.rimaContributed != null;
+  const contributed = hasContribution ? Number(form.evaldasContributed || 0) + Number(form.rimaContributed || 0) : null;
+  const result = contributed == null ? null : total - contributed;
   return <div className="modal-backdrop"><form className="modal networth-modal" onSubmit={(event) => { event.preventDefault(); if (form.monthKey) onSubmit(form); }}>
     <ModalHeader title={initial ? "Redaguoti investicijų mėnesio vertę" : "Nauja investicijų mėnesio vertė"} onClose={onClose}/>
-    <p className="modal-description">Įrašykite faktines Evaldo ir Rimos portfelių vertes mėnesio pabaigoje. Bendra šeimos vertė apskaičiuojama automatiškai.</p>
+    <p className="modal-description">Įrašykite faktines Evaldo ir Rimos portfelių vertes bei grynąjį įneštą kapitalą mėnesio pabaigoje. Įneštas kapitalas – visi iki tos datos įnešti pinigai minus visi iš investicijų atsiimti pinigai.</p>
     <label>Mėnuo<input type="month" required value={form.monthKey || ""} onChange={(event) => set("monthKey", event.target.value)}/></label>
-    <div className="form-grid"><label>Evaldo investicijos<input type="number" min="0" step="0.01" value={form.evaldas ?? ""} onChange={(event) => set("evaldas", event.target.value)}/></label><label>Rimos investicijos<input type="number" min="0" step="0.01" value={form.rima ?? ""} onChange={(event) => set("rima", event.target.value)}/></label></div>
+    <div className="form-grid"><label>Evaldo portfelio vertė<input type="number" min="0" step="0.01" value={form.evaldas ?? ""} onChange={(event) => set("evaldas", event.target.value)}/></label><label>Evaldo įneštas kapitalas<input type="number" min="0" step="0.01" value={form.evaldasContributed ?? ""} onChange={(event) => set("evaldasContributed", event.target.value)} placeholder="Pvz. 11000,00"/></label></div>
+    <div className="form-grid"><label>Rimos portfelio vertė<input type="number" min="0" step="0.01" value={form.rima ?? ""} onChange={(event) => set("rima", event.target.value)}/></label><label>Rimos įneštas kapitalas<input type="number" min="0" step="0.01" value={form.rimaContributed ?? ""} onChange={(event) => set("rimaContributed", event.target.value)} placeholder="Pvz. 3000,00"/></label></div>
     <div className="networth-modal-total"><span>Bendra šeimos investicijų vertė</span><strong>{money(total)}</strong></div>
+    <div className="networth-modal-total"><span>Įneštas kapitalas</span><strong>{contributed == null ? "—" : money(contributed)}</strong></div>
+    <div className="networth-modal-total"><span>Investicijų rezultatas</span><strong>{result == null ? "—" : money(result)}</strong></div>
     <button className="primary-button full">{initial ? "Išsaugoti pakeitimus" : "Išsaugoti mėnesio vertę"}</button>
   </form></div>;
 }
