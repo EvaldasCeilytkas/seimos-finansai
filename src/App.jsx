@@ -756,7 +756,7 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
           initial={editingTransaction}
           assets={assets}
           financialAccounts={financialAccounts.filter((account) => account.active)}
-          initialDate={`${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-01`}
+          initialDate={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`}
           onClose={() => { setTransactionOpen(false); setEditingTransaction(null); }}
           onSubmit={submitTransaction}
         />
