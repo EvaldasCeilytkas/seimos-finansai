@@ -127,8 +127,10 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
     const previousDate = new Date(selectedYear, selectedMonth, 0);
     const previousKey = `${previousDate.getFullYear()}-${String(previousDate.getMonth() + 1).padStart(2, "0")}`;
     const previousRows = transactions.filter((item) => ym(item.date) === previousKey);
+    const daysInPreviousMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+    const chartDays = Math.max(daysInMonth, daysInPreviousMonth);
     let income = 0, expenses = 0, previousExpenses = 0;
-    return Array.from({ length: daysInMonth }, (_, index) => {
+    return Array.from({ length: chartDays }, (_, index) => {
       const dayNumber = index + 1;
       periodTransactions.filter((i) => Number(i.date.slice(8, 10)) === dayNumber).forEach((i) => {
         if (i.type === "income") income += Number(i.amount);
