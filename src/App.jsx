@@ -63,8 +63,8 @@ function FinanceApp({ initialData, onPersist, userEmail, onSignOut }) {
   const [netWorthHistory, setNetWorthHistory] = useState(() => initialData?.netWorthHistory ?? loadStorage(NET_WORTH_HISTORY_KEY, []));
   const [investmentHistoryRows, setInvestmentHistoryRows] = useState(() => initialData?.investmentHistory ?? loadStorage(INVESTMENT_HISTORY_KEY, []));
   const [periodMode, setPeriodMode] = useState("month");
-  const [selectedYear, setSelectedYear] = useState(2026);
-  const [selectedMonth, setSelectedMonth] = useState(7);
+  const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth());
   const [transactionOpen, setTransactionOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [assetOpen, setAssetOpen] = useState(false);
